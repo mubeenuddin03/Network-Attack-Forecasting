@@ -1,4 +1,6 @@
 {
+  "best_model": "LogisticRegression",
+  "threshold": 0.6500000000000001,
   "validation": {
     "precision": 0.75,
     "recall": 1.0,
@@ -43,6 +45,169 @@
     "fn": 3,
     "tp": 0
   },
+  "test_at_05": {
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "pr_auc": 0.5888888888888889,
+    "roc_auc": 0.5555555555555556,
+    "fpr": 0.0,
+    "confusion_matrix": [
+      [
+        3,
+        0
+      ],
+      [
+        3,
+        0
+      ]
+    ],
+    "tn": 3,
+    "fp": 0,
+    "fn": 3,
+    "tp": 0
+  },
+  "threshold_sweep": [
+    {
+      "threshold": 0.1,
+      "precision": 0.6,
+      "recall": 1.0,
+      "f1": 0.7499999999999999
+    },
+    {
+      "threshold": 0.15000000000000002,
+      "precision": 0.6,
+      "recall": 1.0,
+      "f1": 0.7499999999999999
+    },
+    {
+      "threshold": 0.20000000000000004,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571428571428571
+    },
+    {
+      "threshold": 0.25000000000000006,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571428571428571
+    },
+    {
+      "threshold": 0.30000000000000004,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571428571428571
+    },
+    {
+      "threshold": 0.3500000000000001,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571428571428571
+    },
+    {
+      "threshold": 0.40000000000000013,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571428571428571
+    },
+    {
+      "threshold": 0.45000000000000007,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571428571428571
+    },
+    {
+      "threshold": 0.5000000000000001,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571428571428571
+    },
+    {
+      "threshold": 0.5500000000000002,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571428571428571
+    },
+    {
+      "threshold": 0.6000000000000002,
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571428571428571
+    },
+    {
+      "threshold": 0.6500000000000001,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "threshold": 0.7000000000000002,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "threshold": 0.7500000000000002,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "f1": 0.8
+    },
+    {
+      "threshold": 0.8000000000000002,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "f1": 0.8
+    },
+    {
+      "threshold": 0.8500000000000002,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "f1": 0.8
+    },
+    {
+      "threshold": 0.9000000000000002,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "f1": 0.8
+    }
+  ],
+  "feature_importance": {
+    "urg_count": 0.7777688755278562,
+    "udp_flow_count": 0.651094771323869,
+    "avg_flow_packets_per_sec": 0.6134343761829022,
+    "avg_active_mean": 0.5521921656416243,
+    "max_flow_duration": 0.46810852624954224,
+    "avg_packet_size": 0.4668649648891222,
+    "unique_dest_ports": 0.4589161350532084,
+    "unique_source_ports": 0.44323065392285443,
+    "rst_count": 0.4178974665312006,
+    "avg_bwd_bytes": 0.3462710649894612,
+    "avg_fwd_bytes": 0.33812143232271136,
+    "avg_fwd_packets": 0.30272750116354313,
+    "avg_subflow_fwd_pkts": 0.30272750116354313,
+    "avg_idle_mean": 0.2861162236782735,
+    "unique_source_ips": 0.2673257144657832,
+    "ack_count": 0.22946280877943867,
+    "total_flows": 0.2288509270440181,
+    "avg_flow_duration": 0.2190693506330764,
+    "avg_fwd_iat_mean": 0.21536398354439232,
+    "std_flow_duration": 0.18409525679226282,
+    "avg_bwd_iat_mean": 0.18333450781255622,
+    "max_packet_size": 0.17213273936615547,
+    "avg_flow_bytes_per_sec": 0.15205939424571294,
+    "std_packet_size": 0.14627756617677834,
+    "total_packets": 0.1422588031113471,
+    "total_bytes": 0.12546072064359137,
+    "syn_count": 0.1180343602189312,
+    "avg_bwd_packets": 0.11140461079608743,
+    "avg_subflow_bwd_pkts": 0.11140461079608732,
+    "avg_flow_iat_mean": 0.11007002680901627,
+    "psh_count": 0.09817885677652627,
+    "tcp_flow_count": 0.0798928884223678,
+    "unique_dest_ips": 0.02334603039265704,
+    "fin_count": 0.02286208866371222,
+    "min_packet_size": 0.0
+  },
   "feature_cols": [
     "total_flows",
     "total_packets",
@@ -80,5 +245,7 @@
     "avg_subflow_fwd_pkts",
     "avg_subflow_bwd_pkts"
   ],
-  "n_features": 35
+  "n_features": 35,
+  "model_type": "LogisticRegression",
+  "needs_scaling": true
 }

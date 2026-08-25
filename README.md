@@ -95,17 +95,24 @@ network-attack-forecaster/
 │   ├── raw/                    # Original CSV files (read-only)
 │   └── processed/              # Cleaned & windowed data (parquet)
 ├── models/
-│   └── baseline/               # Trained Logistic Regression
+│   ├── baseline/               # Trained Logistic Regression baseline
+│   └── temporal/               # Trained world-model (sequence multi-horizon)
 ├── src/
 │   ├── data/
 │   │   ├── clean_data.py       # Data cleaning pipeline
-│   │   └── create_windows.py   # 5-min window aggregation + future target
+│   │   ├── create_windows.py   # 5-min window aggregation + future target
+│   │   ├── create_sequences.py # Temporal sequences + MITRE mapping
+│   │   └── packet_features.py  # Optional PCAP packet-level features (not tested)
 │   └── models/
-│       ├── train.py            # Logistic Regression training
-│       └── predict.py          # Prediction pipeline
+│       ├── train.py            # Logistic Regression training (+ comparison)
+│       ├── predict.py          # Prediction pipeline
+│       └── temporal.py         # World model: multi-horizon + optional LSTM
 ├── app/
 │   └── app.py                  # Streamlit dashboard
 ├── app.py                      # FastAPI backend
+├── tests/
+│   ├── test_temporal.py        # World-model / sequence / MITRE / inference tests
+│   └── test_packet.py          # Packet interface tests (NOT TESTED vs PCAP)
 ├── requirements.txt
 └── README.md
 ```
@@ -379,6 +386,88 @@ in the following 5 minutes (t to t+5min)
 
 **Zero Data Leakage Guarantee:** Features are computed **only** from the current 5-minute window. The target (attack in next window) is computed **only** from the subsequent window. No future information leaks into training features.
 
+## World Model / Temporal Forecasting (MVP 3–6)
+
+Beyond the single-window baseline, the system now includes a **temporal world model** that reasons over a *history* of network states to forecast attacks multiple steps ahead.
+
+### Network-state representation
+Each network state `S_t` is the existing 5-minute aggregated feature vector of the
+windowed pipeline (flow/packet/flag statistics). A **sequence block** of
+`SEQUENCE_LENGTH = 5` consecutive windows (`S(t-4) … S(t)`) is the model input —
+i.e. 25 minutes of temporal context.
+
+### Temporal / sequence model
+- `src/data/create_sequences.py` converts tumbling windows into **non-overlapping**
+  temporal sequence blocks (prevents train/val/test leakage).
+- `src/models/temporal.py` trains a **sequence-block multi-horizon forecaster**:
+  one Logistic Regression per horizon, consuming the same 10 summary features.
+- A **PyTorch LSTM backend is also included** (`AttackForecastLSTM`) and is used
+  automatically *if* `torch` is installed. The default installed artifact is the
+  lightweight sklearn model so the world model works without a heavy dependency.
+- This is **direct multi-horizon forecasting** (predict +5/+10/+15/+20 min at once).
+  It is **not** a recursive state rollout; that is documented as a future extension.
+
+### Multi-step (K-step) forecasting
+The model outputs an attack-probability **trajectory**:
+
+```json
+[
+  {"horizon_minutes": 5,  "attack_probability": 0.80, "prediction": 1},
+  {"horizon_minutes": 10, "attack_probability": 0.62, "prediction": 1},
+  {"horizon_minutes": 15, "attack_probability": 0.40, "prediction": 0},
+  {"horizon_minutes": 20, "attack_probability": 0.30, "prediction": 0}
+]
+```
+
+Every value comes from actual model inference (`predict_trajectory`).
+
+### MITRE ATT&CK stage mapping
+`src/data/create_sequences.py::get_mitre_attack_stage` maps observable behaviour to
+a stage using only real signals (SYN rate, port diversity, TCP ratio, byte volume,
+flow count, unique IPs):
+
+| Observable behaviour | Mapped stage |
+|----------------------|--------------|
+| High SYN rate + port scanning | `RECONNAISSANCE` |
+| Attack activity + high flow count | `INITIAL_ACCESS` |
+| Sustained port diversity | `COMMAND_AND_CONTROL` |
+| High byte volume | `EXFILTRATION` |
+| High flows + many destinations | `LATERAL_MOVEMENT` |
+| Insufficient evidence | `UNKNOWN` |
+
+Stages are never fabricated; when evidence is insufficient the model returns `UNKNOWN`.
+
+### Explainability
+`train_temporal_sklearn` records feature attributions via **permutation importance**
+when enough samples exist, and falls back to the model's own **coefficients** otherwise.
+Results are saved in `models/temporal/metrics.json` under `explainability`.
+
+### Packet-level features (optional)
+`src/data/packet_features.py` provides a PCAP → packet-level feature interface
+(TTL, TTL variance, TCP window, fragmentation, retransmissions, payload size,
+inter-arrival time, SYN ratio, unique dst ports). **STATUS: NOT TESTED — no PCAP is
+available in this repository.** The function refuses to invent values and raises if no
+PCAP is supplied. It is fully decoupled from the flow-level model.
+
+### Baseline vs World Model (honest comparison)
+| Aspect | Baseline (Logistic Regression) | World Model |
+|--------|-------------------------------|-------------|
+| Input | single 5-min window (35 feats) | 5-window history block (10 feats) |
+| Output | next-5-min probability | +5/+10/+15/+20-min trajectory |
+| Training data | windowed Friday PortScan | same, as non-overlapping sequences |
+
+On this repository's small sample (30 windows → 5 sequences, test n=1) **neither model
+generalises**: baseline test F1 = 0 (PR-AUC 0.59, ROC-AUC 0.56); the world model's
+per-horizon test metrics are similarly unreliable due to the tiny test set. The
+pipelines are correct; a larger CIC-IDS2017 slice is required for meaningful gains.
+
+### Leakage audit
+- Window features use only the current window; targets only the next (`create_windows.py`).
+- Sequences are **non-overlapping** (`step = SEQUENCE_LENGTH`) so no source window is
+  shared across the chronological train/val/test split.
+- Scaler and thresholds are fit on **train only**.
+- Evaluation is strictly chronological (train → val → test).
+
 ## Current Status
 
 ### ✅ Implemented
@@ -386,30 +475,40 @@ in the following 5 minutes (t to t+5min)
 - 5-minute window aggregation with 38 features
 - Future attack target creation (next window)
 - Chronological train/val/test split (no leakage)
-- Logistic Regression baseline with class balancing
-- Streamlit dashboard for visualization
+- Logistic Regression baseline with class balancing (+ Random Forest / HistGradientBoosting comparison)
+- Streamlit dashboard for visualization (dynamic CSV upload, no stale state)
 - **FastAPI backend with `/`, `/health`, `/predict` endpoints**
 - Model loading/inference abstraction with demo fallback
 - Clear REAL_MODEL vs DEMO mode distinction
+- **Temporal world model** (`src/models/temporal.py`): sequence-block multi-horizon forecaster (+ optional PyTorch LSTM backend)
+- **Multi-step (K-step) attack-probability trajectory** (+5/+10/+15/+20 min)
+- **MITRE ATT&CK stage mapping** from observable behaviour (never fabricated)
+- **Explainability** via permutation importance / model coefficients
+- **Non-overlapping sequences** to prevent temporal leakage
+- Optional **packet-level (PCAP) feature interface** (`src/data/packet_features.py`)
 
 ### ⚠️ Known Limitations
 - **Test performance is low** (Precision=0, Recall=0 on 6 test windows) due to:
-  - Very small dataset (only 30 windows from single PortScan file)
+  - Very small dataset (only 30 windows from single PortScan file → 5 sequences)
   - Distribution shift: PortScan attacks only appear in later windows
   - Model never sees attack patterns during training
-- **Pipeline is architecturally correct** — more data (full CIC-IDS2017) will improve results
-- Demo mode uses a simple heuristic, not a trained model
+- The world model's per-horizon test set is **n=1**, so its metrics are indicative only.
+- **Pipeline is architecturally correct** — more data (full CIC-IDS2017) will improve results.
+- Demo mode uses a simple heuristic, not a trained model.
+- Packet-level features are implemented but **NOT TESTED** (no PCAP in repo).
+- The trained world-model artifact is the sklearn sequence-block model; the LSTM path
+  requires `pip install torch` (optional, not installed here).
 
 ### 🔄 Next Steps (Future MVPs)
-| MVP | Addition |
-|-----|----------|
-| 2 | Random Forest / Gradient Boosting |
-| 3 | LSTM + sequences of windows |
-| 4 | Multi-step future-state rollout |
-| 5 | SHAP / attention explanations |
-| 6 | MITRE ATT&CK stage mapping |
-| 7 | PCAP ingestion + packet-level features |
-| 8 | ESP32 integration (LED/buzzer alerts) |
+| MVP | Addition | Status |
+|-----|----------|--------|
+| 2 | Random Forest / Gradient Boosting | ✅ compared in baseline |
+| 3 | LSTM + sequences of windows | ✅ optional backend (`torch`) |
+| 4 | Multi-step future-state rollout | ✅ direct multi-horizon (recursive rollout future) |
+| 5 | SHAP / attention explanations | ✅ permutation/coefficient importance |
+| 6 | MITRE ATT&CK stage mapping | ✅ implemented |
+| 7 | PCAP ingestion + packet-level features | ⚠️ interface only (no PCAP) |
+| 8 | ESP32 integration (LED/buzzer alerts) | ⛔ out of scope |
 
 ## Demo Mode vs Real Model Mode
 
@@ -442,6 +541,15 @@ python -m src.data.create_windows
 python -m src.models.train
 streamlit run app/app.py     # Dashboard
 python app.py                # API backend
+
+# World-model (temporal) training  -> saves models/temporal/
+python -m src.models.temporal
+
+# Tests
+python tests/test_temporal.py
+python tests/test_packet.py
+python test_dynamic.py
+python test_validation.py
 ```
 
 All paths are relative. No hardcoded absolute paths. Random seeds fixed for reproducibility.

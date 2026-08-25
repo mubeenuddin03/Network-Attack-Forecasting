@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import json
+import hashlib
 from pathlib import Path
 from src.data.clean_data import clean_data
 from src.data.create_windows import create_forecasting_dataset
@@ -31,13 +32,23 @@ def predict_window_features(model, scaler, feature_cols, window_features: pd.Dat
 
 
 def process_csv_for_dashboard(csv_path: str, model_dir: str):
-    """Full pipeline: raw CSV -> cleaned -> windows -> predictions."""
+    """Full pipeline: raw CSV -> cleaned -> windows -> predictions.
+
+    Intermediate parquet files are isolated per file *content* (hash) so that
+    two different uploads saved to the same path (e.g. data/raw/uploaded.csv)
+    never share or overwrite each other's cached intermediates. This prevents
+    any stale-data bleed between files A -> B -> C.
+    """
+    # Derive a stable, content-based id for the intermediate artifacts.
+    with open(csv_path, "rb") as fh:
+        content_hash = hashlib.sha256(fh.read()).hexdigest()[:16]
+
     # Clean
-    cleaned_path = "data/processed/temp_cleaned.parquet"
+    cleaned_path = f"data/processed/cleaned_{content_hash}.parquet"
     df = clean_data(csv_path, cleaned_path)
-    
+
     # Create windows
-    windowed_path = "data/processed/temp_windowed.parquet"
+    windowed_path = f"data/processed/windowed_{content_hash}.parquet"
     windows_df = create_forecasting_dataset(cleaned_path, windowed_path)
     
     # Load model

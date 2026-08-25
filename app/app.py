@@ -9,6 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 import sys
+import hashlib
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -30,9 +31,14 @@ def load_model_cached(model_dir):
     return load_model(model_dir)
 
 
+def get_file_hash(file_bytes: bytes) -> str:
+    """Compute SHA256 hash of file content for cache key."""
+    return hashlib.sha256(file_bytes).hexdigest()[:16]
+
+
 @st.cache_data
-def process_csv_cached(csv_path, model_dir):
-    """Process CSV with caching."""
+def process_csv_cached(csv_path: str, model_dir: str, file_hash: str):
+    """Process CSV with caching. file_hash ensures different content = new cache entry."""
     return process_csv_for_dashboard(csv_path, model_dir)
 
 
@@ -60,19 +66,37 @@ def main():
         uploaded_file = st.file_uploader(
             "Upload CIC-IDS2017 CSV", 
             type=["csv"],
-            help="Any GeneratedLabelledFlows CSV (Monday, Tuesday, Wednesday, Thursday, Friday files)"
+            help="Any GeneratedLabelledFlows CSV (Monday, Tuesday, Wednesday, Thursday, Friday files)",
+            key="uploaded_file"
         )
         
-        # Auto-detect local CSV files
-        local_files = find_csv_files()
+        # Track uploaded file identity to detect new uploads and clear stale state
+        if uploaded_file is not None:
+            uploaded_hash = get_file_hash(uploaded_file.getvalue())
+            if st.session_state.get('last_uploaded_hash') != uploaded_hash:
+                # New file uploaded — clear all previous results/state
+                st.session_state['last_uploaded_hash'] = uploaded_hash
+                st.session_state['uploaded_name'] = uploaded_file.name
+                st.session_state.pop('results_df', None)
+                st.session_state['run_analysis'] = False
+        
+        # Auto-detect local CSV files (exclude leftover uploaded.csv so a stale
+        # upload from a previous session can never be silently reused after restart)
+        local_files = [f for f in find_csv_files() if f.name != "uploaded.csv"]
         local_options = ["None"] + [f.name for f in local_files]
         selected_local = st.selectbox("Or select local file:", local_options)
         
-        # Demo sample (small, bundled with repo)
-        use_demo = st.checkbox("Use bundled demo sample (50k rows)", value=True)
+        # Demo sample (small, bundled with repo) — OFF by default so restart does not silently reuse demo
+        use_demo = st.checkbox("Use bundled demo sample (50k rows)", value=False)
         
         if st.button("🔍 ANALYZE", type="primary", use_container_width=True):
             st.session_state.run_analysis = True
+        
+        if st.button("🔄 RESET", use_container_width=True):
+            # Clear all uploaded/processed state — back to clean (no data shown)
+            for key in ['last_uploaded_hash', 'uploaded_name', 'results_df', 'run_analysis']:
+                st.session_state.pop(key, None)
+            st.rerun()
     
     # Main content
     if not st.session_state.get('run_analysis', False):
@@ -97,25 +121,31 @@ def main():
     
     # Determine input file (priority: upload > local > demo)
     csv_path = None
+    display_name = None
+    is_demo = False
     
     if uploaded_file is not None:
         csv_path = "data/raw/uploaded.csv"
+        display_name = st.session_state.get('uploaded_name', uploaded_file.name)
         Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
         uploaded_file.seek(0)
         with open(csv_path, "wb") as f:
             f.write(uploaded_file.read())
-        st.success(f"✅ Using uploaded file: {uploaded_file.name}")
+        st.success(f"✅ Using uploaded file: {display_name}")
         
     elif selected_local != "None":
         csv_path = f"data/raw/{selected_local}"
+        display_name = selected_local
         st.success(f"✅ Using local file: {selected_local}")
         
     elif use_demo:
         csv_path = "data/raw/demo_sample.csv"
+        display_name = "demo_sample.csv (Demo Data)"
+        is_demo = True
         if not Path(csv_path).exists():
             st.error("Demo sample not found. Please upload a CSV file.")
             return
-        st.info("📦 Using bundled demo sample (50k rows, Friday PortScan)")
+        st.info("📦 Using bundled demo sample (50k rows, Friday PortScan) — clearly labelled DEMO")
         
     else:
         st.error("Please upload a CSV file, select a local file, or enable demo sample.")
@@ -123,19 +153,31 @@ def main():
     
     # Validate CSV format before processing
     try:
-        test_df = pd.read_csv(csv_path, nrows=1)
-        required_cols = ['Timestamp', 'Label', 'Flow Duration', 'Total Fwd Packets', 'Protocol']
-        missing = [c for c in required_cols if c not in test_df.columns and c.strip() not in test_df.columns]
+        test_df = pd.read_csv(csv_path, nrows=5)
+        required_cols = ['Timestamp', 'Label', 'Flow Duration', 'Total Fwd Packets', 
+                         'Total Backward Packets', 'Protocol', 'Source IP', 'Destination IP']
+        present = [c for c in test_df.columns]
+        present_stripped = [c.strip() for c in present]
+        missing = [c for c in required_cols if c not in present_stripped]
         if missing:
-            st.warning(f"⚠️ CSV may not be CIC-IDS2017 format. Missing: {missing}")
+            st.error(
+                "This CSV is not compatible with the current forecasting pipeline.\n\n"
+                f"Missing columns: {', '.join(missing)}\n\n"
+                "Required columns: Timestamp, Source IP, Destination IP, Source Port, "
+                "Destination Port, Protocol, Flow Duration, Total Fwd Packets, "
+                "Total Backward Packets, Total Length of Fwd Packets, Total Length of Bwd Packets, "
+                "SYN Flag Count, ACK Flag Count, ... Label"
+            )
+            return
     except Exception as e:
         st.error(f"Cannot read CSV: {e}")
         return
     
-    # Run analysis
+    # Run analysis — use content hash in cache key so different files = different results
+    file_hash = st.session_state.get('last_uploaded_hash', display_name)
     with st.spinner("Processing data and running predictions..."):
         try:
-            results_df = process_csv_cached(csv_path, model_dir)
+            results_df = process_csv_cached(csv_path, model_dir, file_hash)
         except Exception as e:
             st.error(f"Error processing data: {e}")
             st.exception(e)
@@ -143,6 +185,9 @@ def main():
     
     # Display results
     st.success(f"✅ Analysis complete: {len(results_df)} windows processed")
+    
+    # Show which dataset is currently being analyzed (filename is content-driven)
+    st.info(f"**Current File:** `{display_name}`" + ("  🏷️ DEMO DATA" if is_demo else ""))
     
     # Current state (latest window)
     latest = results_df.iloc[-1]
@@ -319,7 +364,7 @@ def main():
     st.write(f"**Window Size:** 5 minutes")
     st.write(f"**Forecast Horizon:** 5 minutes (next window)")
     st.write(f"**Training:** Chronological split (60% train, 20% val, 20% test)")
-    st.write(f"**Input File:** {Path(csv_path).name}")
+    st.write(f"**Input File:** {display_name}")
 
 
 if __name__ == "__main__":
