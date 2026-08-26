@@ -22,7 +22,7 @@ const NAV_ITEMS = [
   { id: 'intelligence', label: 'Attack Intelligence' },
   { id: 'performance', label: 'Model Performance' },
   { id: 'activity', label: 'Activity' },
-  { id: 'settings', label: 'Settings' },
+  { id: 'settings', label: 'CSV Upload' },
 ] as const;
 
 type NavItemId = typeof NAV_ITEMS[number]['id'];
@@ -38,6 +38,7 @@ export function App() {
       case 'overview':
         return (
           <div className="space-y-8">
+            <CSVUpload />
             <Hero />
             <AttackForecastCard />
             <NetworkStatePanel />
@@ -68,21 +69,10 @@ export function App() {
   return (
     <div className="min-h-screen bg-surface-950">
       <Sidebar activeItem={activeNav} onNavigate={(id) => setActiveNav(id as NavItemId)} />
-      <main
-        className={cn(
-          'min-h-screen pb-8 transition-all duration-300 ease-spring',
-          sidebarCollapsed ? 'md:ml-[72px]' : 'md:ml-[260px]'
-        )}
-      >
+      <main className={cn('min-h-screen pb-8 transition-all duration-300 ease-spring', sidebarCollapsed ? 'md:ml-[72px]' : 'md:ml-[260px]')}>
         <div className="max-w-[1600px] mx-auto px-4 md:px-6 lg:px-8 pt-6">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={activeNav}
-              initial={{ opacity: 0, y: reducedMotion ? 0 : 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: reducedMotion ? 0 : -12 }}
-              transition={{ duration: reducedMotion ? 0 : 0.2, ease: 'easeOut' }}
-            >
+            <motion.div key={activeNav} initial={{ opacity: 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: reducedMotion ? 0 : -12 }} transition={{ duration: reducedMotion ? 0 : 0.2, ease: 'easeOut' }}>
               {renderPage()}
             </motion.div>
           </AnimatePresence>
