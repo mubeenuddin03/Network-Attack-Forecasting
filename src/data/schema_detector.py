@@ -105,7 +105,7 @@ COLUMN_ALIASES: Dict[str, List[str]] = {
     ],
     'SYN Flag Count': [
         'syn flag count', 'syn flag cnt', 'syn flags', 'syn_flag_count', 'syn_count',
-        'tcp_syn', 'flags_syn', 'syn'
+        'tcp_syn', 'flags_syn', 'syn', 'syn_flag_density', 'syn ratio', 'syn_ratio', 'synratio', 'syn_rate'
     ],
     'ACK Flag Count': [
         'ack flag count', 'ack flag cnt', 'ack flags', 'ack_flag_count', 'ack_count',
@@ -129,7 +129,7 @@ COLUMN_ALIASES: Dict[str, List[str]] = {
     ],
     'Average Packet Size': [
         'average packet size', 'pkt size avg', 'average_packet_size', 'avg_packet_size',
-        'avg_pkt_size', 'mean_packet_size', 'packet_size_mean', 'packet length mean'
+        'avg_pkt_size', 'mean_packet_size', 'packet_size_mean', 'packet length mean', 'pkt_size'
     ],
     'Max Packet Length': [
         'max packet length', 'pkt len max', 'max_packet_length', 'max_pkt_len',
@@ -149,10 +149,11 @@ COLUMN_ALIASES: Dict[str, List[str]] = {
     ],
     'Flow Packets/s': [
         'flow packets/s', 'flow_packets/s', 'flow_pkts_s', 'flow packets per sec',
-        'flow_packets_per_sec', 'packets_per_sec'
+        'flow_packets_per_sec', 'packets_per_sec', 'packet_throughput', 'flow_intensity', 'flowintensity', 'flow_rate'
     ],
     'Flow IAT Mean': [
-        'flow iat mean', 'flow_iat_mean', 'flow_iat_avg', 'iat_mean', 'flow_inter_arrival_mean'
+        'flow iat mean', 'flow_iat_mean', 'flow_iat_avg', 'iat_mean', 'flow_inter_arrival_mean',
+        'timing_jitter', 'timing jitter', 'timingjitter', 'jitter'
     ],
     'Fwd IAT Mean': [
         'fwd iat mean', 'fwd_iat_mean', 'fwd_iat_avg', 'fwd_inter_arrival_mean'

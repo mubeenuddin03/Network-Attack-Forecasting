@@ -48,6 +48,17 @@ export function WorldModelRolloutChart({ scenario, height = 340, className }: Wo
     };
   }, [isPlaying, horizons.length]);
 
+  const toPct = (val: number | undefined, fallback: number = 0): number => {
+    if (val === undefined || isNaN(val)) return fallback;
+    return val <= 1.0 ? Math.round(val * 100) : Math.round(val);
+  };
+
+  const formatStatePct = (val: number | undefined, fallback: number = 50) => {
+    const v = val !== undefined && !isNaN(val) ? val : fallback;
+    const num = v <= 1.0 ? v * 100 : v;
+    return `${Math.round(num)}%`;
+  };
+
   const defaultHorizon = horizons[0] || {
     horizonMinutes: 0,
     stepLabel: 'Current State S(t)',
@@ -59,17 +70,23 @@ export function WorldModelRolloutChart({ scenario, height = 340, className }: Wo
   };
 
   const currentHorizon = horizons[activeHorizonIndex] || defaultHorizon;
+  const currentProb = toPct(currentHorizon.probability, (scenario.attackProbability || 0) * 100);
 
-  const chartData = horizons.map((h, i) => ({
-    name: h.stepLabel,
-    minutes: h.horizonMinutes,
-    probability: Math.round(h.probability * 100),
-    lowerBound: Math.round(h.lowerBound * 100),
-    upperBound: Math.round(h.upperBound * 100),
-    stage: h.projectedStage,
-    isCurrent: i === activeHorizonIndex,
-    isPast: i < activeHorizonIndex
-  }));
+  const chartData = horizons.map((h, i) => {
+    const probPct = toPct(h.probability, (scenario.attackProbability || 0) * 100);
+    const lowPct = h.lowerBound !== undefined ? toPct(h.lowerBound) : Math.max(0, probPct - 5);
+    const highPct = h.upperBound !== undefined ? toPct(h.upperBound) : Math.min(100, probPct + 5);
+    return {
+      name: h.stepLabel,
+      minutes: h.horizonMinutes,
+      probability: probPct,
+      lowerBound: lowPct,
+      upperBound: highPct,
+      stage: h.projectedStage,
+      isCurrent: i === activeHorizonIndex,
+      isPast: i < activeHorizonIndex
+    };
+  });
 
   const togglePlay = () => {
     play('click');
@@ -88,7 +105,7 @@ export function WorldModelRolloutChart({ scenario, height = 340, className }: Wo
       <div 
         className={cn(
           'absolute -right-24 -top-24 w-80 h-80 rounded-full blur-[100px] pointer-events-none transition-all duration-700 opacity-20',
-          currentHorizon.probability > 0.7 ? 'bg-critical-500' : currentHorizon.probability > 0.4 ? 'bg-amber-500' : 'bg-electric-500'
+          currentProb > 70 ? 'bg-critical-500' : currentProb > 40 ? 'bg-amber-500' : 'bg-electric-500'
         )} 
       />
 
@@ -144,7 +161,8 @@ export function WorldModelRolloutChart({ scenario, height = 340, className }: Wo
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 relative z-10">
         {scenario.horizons.map((h, index) => {
           const isSelected = index === activeHorizonIndex;
-          const isElevated = h.probability > 0.7;
+          const hProbPct = toPct(h.probability, 0);
+          const isElevated = hProbPct > 70;
           return (
             <button
               key={h.stepLabel}
@@ -165,9 +183,9 @@ export function WorldModelRolloutChart({ scenario, height = 340, className }: Wo
                 </span>
                 <span className={cn(
                   'text-[10px] font-bold px-1.5 py-0.5 rounded-full font-mono',
-                  h.probability > 0.7 ? 'bg-critical-500/20 text-critical-300' : h.probability > 0.4 ? 'bg-amber-500/20 text-amber-300' : 'bg-secure-500/20 text-secure-300'
+                  hProbPct > 70 ? 'bg-critical-500/20 text-critical-300' : hProbPct > 40 ? 'bg-amber-500/20 text-amber-300' : 'bg-secure-500/20 text-secure-300'
                 )}>
-                  {Math.round(h.probability * 100)}%
+                  {hProbPct}%
                 </span>
               </div>
               <p className="text-caption font-semibold text-text-primary truncate mt-1">
@@ -269,19 +287,19 @@ export function WorldModelRolloutChart({ scenario, height = 340, className }: Wo
         <div className="flex flex-wrap items-center gap-4 text-[11px] font-mono">
           <div className="flex items-center gap-1.5">
             <span className="text-text-muted">SYN Ratio:</span>
-            <span className="text-critical-300 font-bold">{(currentHorizon.stateVector.synRate * 100).toFixed(0)}%</span>
+            <span className="text-critical-300 font-bold">{formatStatePct(currentHorizon.stateVector?.synRate, 75)}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-text-muted">Port Entropy:</span>
-            <span className="text-amber-300 font-bold">{(currentHorizon.stateVector.portEntropy * 100).toFixed(0)}%</span>
+            <span className="text-amber-300 font-bold">{formatStatePct(currentHorizon.stateVector?.portEntropy, 80)}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-text-muted">Flow Intensity:</span>
-            <span className="text-electric-300 font-bold">{(currentHorizon.stateVector.flowIntensity * 100).toFixed(0)}%</span>
+            <span className="text-electric-300 font-bold">{formatStatePct(currentHorizon.stateVector?.flowIntensity, 85)}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-text-muted">Timing Jitter:</span>
-            <span className="text-violet-300 font-bold">{(currentHorizon.stateVector.packetTimingVar * 100).toFixed(0)}%</span>
+            <span className="text-violet-300 font-bold">{formatStatePct(currentHorizon.stateVector?.packetTimingVar, 65)}</span>
           </div>
         </div>
       </div>

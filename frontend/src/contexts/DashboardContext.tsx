@@ -392,8 +392,11 @@ function computeDerivedTelemetry(features: WindowFeatures): NetworkTelemetry {
 
 function generateRiskTimeline(prediction: DashboardPrediction, _history: DashboardPrediction[] = []): RiskTimelineData {
   const now = Date.now();
-  const prob = prediction.attack_probability;
-  const isAttack = prob >= prediction.threshold_used;
+  const rawProb = prediction.attack_probability;
+  // Normalize to 0.0 - 1.0 unit scale for timeline chart
+  const prob = rawProb > 1.0 ? rawProb / 100 : Math.max(0.0, rawProb);
+  const threshold = prediction.threshold_used > 1.0 ? prediction.threshold_used / 100 : (prediction.threshold_used || 0.5);
+  const isAttack = prob >= threshold;
   const points: RiskTimelinePoint[] = [];
 
   // Generate 12 historical points showing realistic build-up / baseline
@@ -438,15 +441,16 @@ function generateRiskTimeline(prediction: DashboardPrediction, _history: Dashboa
   return {
     points,
     current_index: 12,
-    threshold: prediction.threshold_used,
+    threshold,
     window_size_minutes: 5,
     forecast_horizon_minutes: 25,
   };
 }
 
 function computeDefenderFocus(prediction: DashboardPrediction, telemetry: NetworkTelemetry | null): DefenderFocus {
-  const prob = prediction.attack_probability;
-  const threshold = prediction.threshold_used;
+  const rawProb = prediction.attack_probability;
+  const prob = rawProb > 1.0 ? rawProb / 100 : rawProb;
+  const threshold = prediction.threshold_used > 1.0 ? prediction.threshold_used / 100 : (prediction.threshold_used || 0.5);
   const details: string[] = [];
   const based_on: string[] = [];
 
@@ -502,97 +506,122 @@ function buildUploadedScenario(
   prediction: UploadPrediction,
   riskTimeline: RiskTimelineData
 ): AttackScenario {
-  const prob = prediction.attack_probability;
-  const isAttack = prediction.status === 'ATTACK_LIKELY';
+  const rawProb = prediction.attack_probability;
+  const prob = rawProb > 1.0 ? rawProb / 100 : Math.max(0.0, rawProb);
+  const isAttack = prediction.status === 'ATTACK_LIKELY' || prob >= 0.5;
   const feats = prediction.features;
-  const synRate = feats.total_flows > 0 ? feats.syn_count / feats.total_flows : 0;
-  const portEntropy = feats.total_flows > 0 ? (feats.unique_source_ports + feats.unique_dest_ports) / feats.total_flows : 0;
-  const flowIntensity = Math.min(1.0, feats.total_flows / 5000);
+  
+  // Latent State Vector Extraction with robust fallback defaults (Requirement 3)
+  const rawSyn = feats.total_flows > 0 && feats.syn_count > 0 ? feats.syn_count / feats.total_flows : 0;
+  const synRate = rawSyn > 0 ? (rawSyn > 1.0 ? rawSyn / 100 : rawSyn) : (isAttack ? 0.85 : 0.08);
+
+  const rawPort = feats.total_flows > 0 && (feats.unique_source_ports + feats.unique_dest_ports) > 2 
+    ? (feats.unique_source_ports + feats.unique_dest_ports) / feats.total_flows 
+    : 0;
+  const portEntropy = rawPort > 0 ? (rawPort > 1.0 ? rawPort / 100 : rawPort) : (isAttack ? 0.78 : 0.06);
+
+  const flowIntensity = feats.total_flows > 0 ? Math.min(1.0, feats.total_flows / 5000) : (isAttack ? 0.88 : 0.12);
+  const packetTimingVar = isAttack ? 0.65 : 0.20;
 
   const horizons = (prediction.horizons && prediction.horizons.length > 0)
-    ? prediction.horizons.map((h, i) => ({
-        horizonMinutes: h.horizonMinutes ?? (i * 5),
-        stepLabel: h.stepLabel ?? (i === 0 ? 'Current State S(t)' : `S(t + ${i * 5}m)`),
-        probability: h.probability ?? prob,
-        lowerBound: h.lowerBound ?? Math.max(0, (h.probability ?? prob) - 0.05),
-        upperBound: h.upperBound ?? Math.min(1, (h.probability ?? prob) + 0.05),
-        projectedStage: h.projectedStage ?? (isAttack ? 'Active Attack Phase' : 'Nominal Equilibrium'),
-        stateVector: h.stateVector ?? {
-          synRate: Math.min(1, synRate),
-          portEntropy: Math.min(1, portEntropy),
-          flowIntensity,
-          packetTimingVar: 0.35,
-        }
-      }))
+    ? prediction.horizons.map((h, i) => {
+        const rawHProb = h.probability ?? prob;
+        const hProb = rawHProb > 1.0 ? rawHProb / 100 : rawHProb;
+        const rawHLower = h.lowerBound ?? Math.max(0, hProb - 0.05);
+        const hLower = rawHLower > 1.0 ? rawHLower / 100 : rawHLower;
+        const rawHUpper = h.upperBound ?? Math.min(1, hProb + 0.05);
+        const hUpper = rawHUpper > 1.0 ? rawHUpper / 100 : rawHUpper;
+
+        const sv = h.stateVector || {};
+        const hSyn = sv.synRate !== undefined ? (sv.synRate > 1.0 ? sv.synRate / 100 : sv.synRate) : synRate;
+        const hPort = sv.portEntropy !== undefined ? (sv.portEntropy > 1.0 ? sv.portEntropy / 100 : sv.portEntropy) : portEntropy;
+        const hFlow = sv.flowIntensity !== undefined ? (sv.flowIntensity > 1.0 ? sv.flowIntensity / 100 : sv.flowIntensity) : flowIntensity;
+        const hJitter = sv.packetTimingVar !== undefined ? (sv.packetTimingVar > 1.0 ? sv.packetTimingVar / 100 : sv.packetTimingVar) : packetTimingVar;
+
+        return {
+          horizonMinutes: h.horizonMinutes ?? (i * 5),
+          stepLabel: h.stepLabel ?? (i === 0 ? 'Current State S(t)' : `S(t + ${i * 5}m)`),
+          probability: hProb,
+          lowerBound: hLower,
+          upperBound: hUpper,
+          projectedStage: h.projectedStage ?? (isAttack ? 'Active Attack Phase' : 'Nominal Equilibrium'),
+          stateVector: {
+            synRate: Math.min(1, hSyn),
+            portEntropy: Math.min(1, hPort),
+            flowIntensity: Math.min(1, hFlow),
+            packetTimingVar: Math.min(1, hJitter),
+          }
+        };
+      })
     : [
         {
           horizonMinutes: 0,
-          stepLabel: 'Ingested Window S(t)',
+          stepLabel: 'Current State S(t)',
           probability: prob,
-          lowerBound: Math.max(0, prob - 0.05),
-          upperBound: Math.min(1, prob + 0.05),
+          lowerBound: Math.max(0, prob - 0.04),
+          upperBound: Math.min(1, prob + 0.04),
           projectedStage: isAttack ? 'Active Infiltration' : 'Nominal Baseline',
           stateVector: {
             synRate: Math.min(1, synRate),
             portEntropy: Math.min(1, portEntropy),
-            flowIntensity,
-            packetTimingVar: 0.35,
+            flowIntensity: Math.min(1, flowIntensity),
+            packetTimingVar: Math.min(1, packetTimingVar),
           },
         },
         {
           horizonMinutes: 5,
           stepLabel: 'S(t + 5m)',
-          probability: isAttack ? Math.min(0.99, prob + 0.03) : Math.max(0, prob - 0.01),
-          lowerBound: isAttack ? prob : Math.max(0, prob - 0.04),
-          upperBound: isAttack ? Math.min(1, prob + 0.08) : Math.max(0.02, prob + 0.02),
+          probability: isAttack ? Math.min(0.99, prob + 0.02) : Math.max(0.01, prob - 0.01),
+          lowerBound: isAttack ? Math.max(0, prob - 0.02) : Math.max(0, prob - 0.04),
+          upperBound: isAttack ? Math.min(1, prob + 0.06) : Math.max(0.02, prob + 0.02),
           projectedStage: isAttack ? 'State Escalation' : 'Stable Operating Baseline',
           stateVector: {
-            synRate: Math.min(1, isAttack ? synRate * 1.1 : synRate * 0.9),
-            portEntropy: Math.min(1, portEntropy),
-            flowIntensity: Math.min(1, flowIntensity * 1.05),
-            packetTimingVar: 0.38,
+            synRate: Math.min(1, isAttack ? synRate * 1.08 : synRate * 0.9),
+            portEntropy: Math.min(1, isAttack ? portEntropy * 1.05 : portEntropy * 0.9),
+            flowIntensity: Math.min(1, isAttack ? flowIntensity * 1.05 : flowIntensity * 0.9),
+            packetTimingVar: Math.min(1, isAttack ? 0.72 : 0.22),
           },
         },
         {
           horizonMinutes: 10,
           stepLabel: 'S(t + 10m)',
-          probability: isAttack ? Math.min(0.99, prob + 0.06) : Math.max(0, prob - 0.02),
-          lowerBound: isAttack ? Math.min(0.95, prob + 0.02) : Math.max(0, prob - 0.05),
-          upperBound: isAttack ? 1.0 : Math.max(0.02, prob + 0.03),
+          probability: isAttack ? Math.min(0.99, prob + 0.03) : Math.max(0.01, prob - 0.02),
+          lowerBound: isAttack ? Math.max(0, prob - 0.03) : Math.max(0, prob - 0.05),
+          upperBound: isAttack ? Math.min(1, prob + 0.08) : Math.max(0.02, prob + 0.03),
           projectedStage: isAttack ? 'Lateral / Impact Phase' : 'Equilibrium Retained',
           stateVector: {
-            synRate: Math.min(1, isAttack ? synRate * 1.2 : synRate * 0.8),
-            portEntropy: Math.min(1, portEntropy * 1.1),
-            flowIntensity: Math.min(1, flowIntensity * 1.1),
-            packetTimingVar: 0.42,
+            synRate: Math.min(1, isAttack ? synRate * 1.15 : synRate * 0.8),
+            portEntropy: Math.min(1, isAttack ? portEntropy * 1.08 : portEntropy * 0.8),
+            flowIntensity: Math.min(1, isAttack ? flowIntensity * 1.08 : flowIntensity * 0.8),
+            packetTimingVar: Math.min(1, isAttack ? 0.78 : 0.20),
           },
         },
         {
           horizonMinutes: 15,
           stepLabel: 'S(t + 15m)',
-          probability: isAttack ? Math.min(0.99, prob + 0.08) : Math.max(0, prob - 0.02),
-          lowerBound: isAttack ? Math.min(0.95, prob + 0.04) : 0,
-          upperBound: isAttack ? 1.0 : 0.05,
+          probability: isAttack ? Math.min(0.99, prob + 0.04) : Math.max(0.01, prob - 0.02),
+          lowerBound: isAttack ? Math.max(0, prob - 0.04) : 0,
+          upperBound: isAttack ? Math.min(1, prob + 0.09) : 0.05,
           projectedStage: isAttack ? 'System Compromise' : 'Nominal Traffic Flow',
           stateVector: {
-            synRate: Math.min(1, isAttack ? synRate * 1.25 : synRate * 0.7),
-            portEntropy: Math.min(1, portEntropy),
-            flowIntensity,
-            packetTimingVar: 0.45,
+            synRate: Math.min(1, isAttack ? synRate * 1.20 : synRate * 0.7),
+            portEntropy: Math.min(1, isAttack ? portEntropy * 1.10 : portEntropy * 0.7),
+            flowIntensity: Math.min(1, isAttack ? flowIntensity * 1.10 : flowIntensity * 0.7),
+            packetTimingVar: Math.min(1, isAttack ? 0.84 : 0.18),
           },
         },
         {
           horizonMinutes: 20,
           stepLabel: 'S(t + 20m)',
-          probability: isAttack ? Math.min(0.99, prob + 0.09) : Math.max(0, prob - 0.03),
-          lowerBound: isAttack ? Math.min(0.95, prob + 0.05) : 0,
+          probability: isAttack ? Math.min(0.99, prob + 0.05) : Math.max(0.01, prob - 0.03),
+          lowerBound: isAttack ? Math.max(0, prob - 0.05) : 0,
           upperBound: isAttack ? 1.0 : 0.04,
           projectedStage: isAttack ? 'Full Breach Criticality' : 'Nominal Equilibrium',
           stateVector: {
-            synRate: Math.min(1, isAttack ? synRate * 1.3 : synRate * 0.6),
-            portEntropy: Math.min(1, portEntropy),
-            flowIntensity,
-            packetTimingVar: 0.5,
+            synRate: Math.min(1, isAttack ? synRate * 1.25 : synRate * 0.6),
+            portEntropy: Math.min(1, isAttack ? portEntropy * 1.12 : portEntropy * 0.6),
+            flowIntensity: Math.min(1, isAttack ? flowIntensity * 1.12 : flowIntensity * 0.6),
+            packetTimingVar: Math.min(1, isAttack ? 0.90 : 0.15),
           },
         },
       ];
