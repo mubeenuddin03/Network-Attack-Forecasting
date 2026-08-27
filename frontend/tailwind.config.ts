@@ -9,13 +9,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Near-black graphite surfaces
+        // Graphite surfaces (brightened for better readability)
         surface: {
-          950: '#030712',  // Near black
-          900: '#0a0f1a',  // Deep graphite
-          850: '#111827',  // Card background
-          800: '#181f2e',  // Elevated surface
-          700: '#1f2937',  // Border/hover
+          950: '#0b1322',  // App background
+          900: '#121d33',  // Deep graphite
+          850: '#1b2942',  // Card background
+          800: '#25344f',  // Elevated surface
+          700: '#324363',  // Border/hover
         },
         // Electric blue accents
         electric: {
@@ -60,22 +60,23 @@ const config: Config = {
         // Text
         text: {
           primary: '#f8fafc',
-          secondary: '#cbd5e1',
-          muted: '#94a3b8',
-          disabled: '#64748b',
+          secondary: '#94a3b8',
+          muted: '#64748b',
+          disabled: '#475569',
         },
         // Borders
         border: {
-          subtle: 'rgba(148, 163, 184, 0.08)',
-          default: 'rgba(148, 163, 184, 0.15)',
-          strong: 'rgba(148, 163, 184, 0.25)',
+          subtle: 'rgba(148, 163, 184, 0.12)',
+          default: 'rgba(148, 163, 184, 0.20)',
+          strong: 'rgba(148, 163, 184, 0.30)',
           focus: 'rgba(59, 130, 246, 0.5)',
         },
       },
       fontFamily: {
-        display: ['Space Grotesk', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
-        ui: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        display: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        ui: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
       fontSize: {
         'display-xl': ['clamp(2.5rem, 5vw, 4.5rem)', { lineHeight: '1.1', letterSpacing: '-0.03em', fontWeight: '700' }],
@@ -134,6 +135,9 @@ const config: Config = {
         'glow-amber': '0 0 16px rgba(245, 158, 11, 0.2), 0 0 32px rgba(245, 158, 11, 0.1)',
         'glow-critical': '0 0 16px rgba(239, 68, 68, 0.2), 0 0 32px rgba(239, 68, 68, 0.1)',
         'glow-secure': '0 0 16px rgba(34, 197, 94, 0.2), 0 0 32px rgba(34, 197, 94, 0.1)',
+        'glow-indigo': '0 0 0 1px oklch(0.65 0.21 275 / 35%), 0 18px 50px -18px oklch(0.65 0.21 275 / 60%)',
+        'glow-cyan': '0 0 0 1px oklch(0.79 0.15 200 / 35%), 0 18px 50px -18px oklch(0.79 0.15 200 / 55%)',
+        'glow-red': '0 0 0 1px oklch(0.66 0.24 22 / 40%), 0 18px 50px -18px oklch(0.66 0.24 22 / 60%)',
         'inner-glow': 'inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -1px 0 rgba(0, 0, 0, 0.1)',
         'elevation-1': '0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3)',
         'elevation-2': '0 4px 12px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.3)',

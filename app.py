@@ -4,6 +4,9 @@ Supports both REAL MODEL MODE (trained Logistic Regression) and DEMO MODE (fallb
 """
 import os
 import json
+import tempfile
+import time
+import hashlib
 from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -11,7 +14,7 @@ from contextlib import asynccontextmanager
 import numpy as np
 import pandas as pd
 import joblib
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 from typing import List, Literal
@@ -22,6 +25,20 @@ FEATURE_COLS_PATH = MODEL_DIR / "feature_cols.json"
 MODEL_PATH = MODEL_DIR / "model.joblib"
 SCALER_PATH = MODEL_DIR / "scaler.joblib"
 METRICS_PATH = MODEL_DIR / "metrics.json"
+
+MAX_UPLOAD_BYTES = 300 * 1024 * 1024  # 300 MB
+
+# Columns required by the existing CIC-IDS2017 cleaning / windowing pipeline.
+REQUIRED_COLUMNS = [
+    'Timestamp', 'Source IP', 'Destination IP', 'Source Port', 'Destination Port',
+    'Protocol', 'Flow Duration', 'Total Fwd Packets', 'Total Backward Packets',
+    'Total Length of Fwd Packets', 'Total Length of Bwd Packets', 'SYN Flag Count',
+    'ACK Flag Count', 'RST Flag Count', 'FIN Flag Count', 'PSH Flag Count',
+    'URG Flag Count', 'Average Packet Size', 'Max Packet Length', 'Min Packet Length',
+    'Packet Length Std', 'Flow Bytes/s', 'Flow Packets/s', 'Flow IAT Mean',
+    'Fwd IAT Mean', 'Bwd IAT Mean', 'Active Mean', 'Idle Mean',
+    'Subflow Fwd Packets', 'Subflow Bwd Packets', 'Label',
+]
 
 _model = None
 _scaler = None
@@ -121,13 +138,13 @@ def load_model_artifacts():
         
         _model_loaded = True
         _model_load_error = None
-        print(f"✅ Loaded real model from {MODEL_DIR}")
+        print(f"Loaded real model from {MODEL_DIR}")
         print(f"   Features: {len(_feature_cols)}")
         
     except Exception as e:
         _model_load_error = str(e)
         _model_loaded = False
-        print(f"⚠️ Failed to load real model: {e}")
+        print(f"Failed to load real model: {e}")
         print("   Falling back to DEMO MODE")
 
 
@@ -194,11 +211,21 @@ async def lifespan(app: FastAPI):
     # Cleanup if needed
 
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="Network Attack Forecasting API",
     description="Predict attack likelihood in the next 5-minute window based on current network behavior",
     version="1.0.0",
     lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -248,6 +275,48 @@ async def health():
         )
 
 
+@app.get("/benchmarks")
+async def get_benchmarks():
+    """Return real evaluation metrics comparing Baseline LR vs Temporal World Model."""
+    baseline_metrics = {}
+    world_model_metrics = {}
+
+    if METRICS_PATH.exists():
+        with open(METRICS_PATH) as f:
+            baseline_metrics = json.load(f)
+
+    wm_metrics_path = Path("models/world_model/metrics.json")
+    if wm_metrics_path.exists():
+        with open(wm_metrics_path) as f:
+            world_model_metrics = json.load(f)
+
+    return {
+        "baseline_model": {
+            "name": "Logistic Regression (Per-Flow/Window Baseline)",
+            "metrics": baseline_metrics
+        },
+        "world_model": {
+            "name": "Temporal World Model (P(S_{t+1}|S_t) Multi-Output Dynamics)",
+            "metrics": world_model_metrics
+        }
+    }
+
+
+@app.post("/rollout")
+async def forward_rollout(request: PredictRequest, k_steps: int = 4):
+    """Execute real autoregressive K-step forward simulation from input state."""
+    from src.models.world_model import get_world_model
+    wm = get_world_model()
+    if wm is None or not wm.is_fitted:
+        raise HTTPException(status_code=503, detail="World model not loaded.")
+    
+    trajectory = wm.rollout(request.features, k_steps=k_steps, window_minutes=5)
+    return {
+        "k_steps": k_steps,
+        "trajectory": trajectory
+    }
+
+
 @app.post("/predict", response_model=PredictResponse)
 async def predict(request: PredictRequest):
     """
@@ -290,6 +359,167 @@ async def http_exception_handler(request, exc):
         status_code=exc.status_code,
         content={"detail": exc.detail}
     )
+
+
+def _safe_float(value):
+    try:
+        if value is None or pd.isna(value) or np.isinf(value):
+            return 0.0
+    except (TypeError, ValueError):
+        return 0.0
+    return float(value)
+
+
+def _cleanup_tmp(path: str) -> None:
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+def process_upload(tmp_csv_path: str, original_filename: str, file_size: int) -> dict:
+    """Run the cleaning + windowing pipeline on an uploaded CSV and
+    produce real World Model state predictions and autoregressive K-step rollout.
+
+    Raises ValueError for user-facing data problems (=> HTTP 400/422)."""
+    from src.data.schema_detector import detect_column_mappings, standardize_dataframe
+    from src.data.clean_data import clean_data
+    from src.data.create_windows import create_forecasting_dataset
+    from src.models.world_model import get_world_model, STATE_FEATURES
+
+    # 1. Inspect and validate schema
+    preview = pd.read_csv(tmp_csv_path, nrows=5)
+    if preview.empty:
+        raise ValueError("The CSV file is empty (no columns detected).")
+    
+    col_mapping, detected, missing_critical = detect_column_mappings(list(preview.columns))
+    if missing_critical:
+        raise ValueError(
+            f"CSV detected, but required network features could not be mapped. "
+            f"Missing: {', '.join(missing_critical)}. "
+            f"Detected: {', '.join(detected) if detected else 'None'}."
+        )
+
+    content_hash = hashlib.sha256(open(tmp_csv_path, 'rb').read()).hexdigest()[:16]
+    cleaned_path = f"data/processed/uploaded_cleaned_{content_hash}.parquet"
+    windowed_path = f"data/processed/uploaded_windowed_{content_hash}.parquet"
+
+    df_clean = clean_data(tmp_csv_path, cleaned_path)
+    if df_clean.empty:
+        raise ValueError("No valid rows remained after cleaning — the CSV may be malformed or empty.")
+
+    windows_df = create_forecasting_dataset(cleaned_path, windowed_path)
+    if windows_df.empty or len(windows_df) < 1:
+        raise ValueError(
+            "Could not build any 5-minute windows. Ensure the Timestamp column "
+            "spans at least 5 minutes of traffic."
+        )
+
+    if not _model_loaded:
+        load_model_artifacts()
+
+    last = windows_df.iloc[-1]
+    features_dict = {col: _safe_float(last.get(col, 0.0)) for col in STATE_FEATURES if col in last}
+
+    # 2. Execute Real Model Inference
+    if _model_loaded and _model is not None and _scaler is not None and _feature_cols is not None:
+        X = pd.DataFrame([last])[_feature_cols]
+        X = X.replace([np.inf, -np.inf], np.nan)
+        X = X.fillna(0.0)
+        X_scaled = _scaler.transform(X)
+        proba = float(_model.predict_proba(X_scaled)[:, 1][0])
+        pred = int(proba >= 0.5)
+        mode = "REAL_MODEL"
+    else:
+        syn_rate = float(last.get('syn_count', 0)) / max(float(last.get('total_flows', 1)), 1.0)
+        port_div = (float(last.get('unique_source_ports', 0)) + float(last.get('unique_dest_ports', 0))) / max(float(last.get('total_flows', 1)), 1.0)
+        flow_intensity = float(last.get('total_flows', 0)) / 1000.0
+        score = min(1.0, max(0.0, (syn_rate * 2.0) + (port_div * 1.5) + (flow_intensity * 0.5)))
+        proba = float(score)
+        pred = int(proba >= 0.5)
+        mode = "DEMO"
+
+    # 3. Execute Real World Model K-Step Autoregressive Rollout
+    wm = get_world_model()
+    if wm is not None and wm.is_fitted:
+        horizons = wm.rollout(features_dict, k_steps=4, window_minutes=5)
+    else:
+        horizons = []
+
+    return {
+        "dataset": {
+            "filename": original_filename,
+            "file_size_bytes": file_size,
+            "row_count": int(df_clean.shape[0]),
+            "window_count": int(len(windows_df)),
+            "time_range_start": windows_df['window_start'].min().isoformat(),
+            "time_range_end": windows_df['window_end'].max().isoformat(),
+            "schema_info": {
+                "mapped_columns": len(col_mapping),
+                "detected_canonical": detected,
+            }
+        },
+        "prediction": {
+            "attack_probability": proba,
+            "prediction": pred,
+            "status": "ATTACK_LIKELY" if pred == 1 else "NORMAL",
+            "mode": mode,
+            "threshold_used": 0.5,
+            "window_start": pd.Timestamp(last['window_start']).isoformat(),
+            "window_end": pd.Timestamp(last['window_end']).isoformat(),
+            "features": features_dict,
+            "horizons": horizons,
+            "rollout": horizons,
+        },
+    }
+
+
+@app.post("/upload", response_model=None)
+async def upload_csv(file: UploadFile = File(...)):
+    """Multipart CSV upload (max 300 MB) -> clean, window, and run the
+    existing trained model on the latest valid 5-minute window."""
+    if not file.filename or not file.filename.lower().endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Only .csv files are supported.")
+
+    tmp_path = os.path.join(
+        tempfile.gettempdir(), f"naf_upload_{os.getpid()}_{int(time.time() * 1000)}.csv"
+    )
+
+    # Stream to disk while enforcing the size limit (no full in-memory load).
+    total = 0
+    try:
+        with open(tmp_path, 'wb') as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File exceeds the 300 MB limit (received {total // (1024 * 1024)} MB).",
+                    )
+                out.write(chunk)
+    except HTTPException:
+        _cleanup_tmp(tmp_path)
+        raise
+    except Exception as e:
+        _cleanup_tmp(tmp_path)
+        raise HTTPException(status_code=400, detail=f"Could not read uploaded file: {e}")
+
+    try:
+        result = process_upload(tmp_path, file.filename, total)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process CSV: {e}")
+    finally:
+        _cleanup_tmp(tmp_path)
+
+    return result
 
 
 if __name__ == "__main__":

@@ -4,10 +4,10 @@
 
 @layer base {
   :root {
-    --color-bg: #030712;
-    --color-surface: #0a0f1a;
-    --color-card: #111827;
-    --color-border: rgba(148, 163, 184, 0.1);
+    --color-bg: #0b1322;
+    --color-surface: #121d33;
+    --color-card: #1b2942;
+    --color-border: rgba(148, 163, 184, 0.16);
   }
 
   * {
@@ -22,7 +22,6 @@
 
   body {
     @apply bg-surface-950 text-text-primary font-ui min-h-screen;
-    background-image: var(--tw-gradient-to), var(--tw-gradient-from);
   }
 
   ::selection {
@@ -56,6 +55,13 @@
       0 -1px 0 rgba(0,0,0,0.2) inset,
       0 4px 24px rgba(0,0,0,0.4),
       0 0 0 1px rgba(148,163,184,0.05);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .glass-panel:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45), 0 4px 20px rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.35);
   }
 
   .glass-panel-elevated {
@@ -65,6 +71,13 @@
       0 -1px 0 rgba(0,0,0,0.15) inset,
       0 12px 40px rgba(0,0,0,0.5),
       0 0 0 1px rgba(148,163,184,0.08);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .glass-panel-elevated:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 4px 20px rgba(59, 130, 246, 0.18);
+    border-color: rgba(59, 130, 246, 0.4);
   }
 
   .glass-panel-strong {
@@ -250,5 +263,95 @@
 
   .backface-hidden {
     backface-visibility: hidden;
+  }
+}
+
+/* ============================================================
+   NAF neon design tokens + utilities (ported from Lovable)
+   These layer on top of the existing graphite/electric palette so
+   Recharts visuals, tooltips and card glows can share one neon
+   language without touching the real API / data flow.
+   ============================================================ */
+:root {
+  --neon-indigo: oklch(0.65 0.21 275);
+  --neon-purple: oklch(0.68 0.23 305);
+  --neon-cyan: oklch(0.79 0.15 200);
+  --neon-red: oklch(0.66 0.24 22);
+  --neon-amber: oklch(0.8 0.16 78);
+  --neon-green: oklch(0.78 0.18 155);
+
+  /* Tokens referenced by Recharts tooltip / axis styling */
+  --popover: #15203a;
+  --popover-foreground: #f8fafc;
+  --muted-foreground: #aab7c9;
+  --surface: #121d33;
+  --border: rgba(148, 163, 184, 0.16);
+
+  --glow-indigo: 0 0 0 1px oklch(0.65 0.21 275 / 35%), 0 18px 50px -18px oklch(0.65 0.21 275 / 60%);
+  --glow-cyan: 0 0 0 1px oklch(0.79 0.15 200 / 35%), 0 18px 50px -18px oklch(0.79 0.15 200 / 55%);
+  --glow-red: 0 0 0 1px oklch(0.66 0.24 22 / 40%), 0 18px 50px -18px oklch(0.66 0.24 22 / 60%);
+  --gradient-hero: radial-gradient(1200px 600px at 15% -10%, oklch(0.65 0.21 275 / 22%), transparent 60%),
+    radial-gradient(900px 500px at 90% 0%, oklch(0.79 0.15 200 / 14%), transparent 55%);
+}
+
+@layer components {
+  .glass {
+    background: color-mix(in oklab, var(--surface) 55%, transparent);
+    backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid var(--border);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+      0 24px 60px -30px rgba(0, 0, 0, 0.8);
+  }
+
+  .glass-strong {
+    background: color-mix(in oklab, var(--surface) 88%, transparent);
+    backdrop-filter: blur(24px) saturate(150%);
+    border: 1px solid var(--border);
+    box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.85);
+  }
+
+  .glow-indigo {
+    box-shadow: var(--glow-indigo);
+  }
+
+  .glow-cyan {
+    box-shadow: var(--glow-cyan);
+  }
+
+  .glow-red {
+    box-shadow: var(--glow-red);
+  }
+
+  .grid-lines {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(100deg, var(--neon-cyan), var(--neon-indigo) 55%, var(--neon-purple));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  @keyframes naf-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.82);
+    }
+  }
+
+  .pulse-dot {
+    animation: naf-pulse 1.8s ease-in-out infinite;
   }
 }

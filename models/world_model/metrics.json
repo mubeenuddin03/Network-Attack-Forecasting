@@ -1,0 +1,10 @@
+{
+  "model_type": "TemporalWorldModel (P(S_{t+1}|S_t) Multi-Output Dynamics)",
+  "state_dimension": 35,
+  "state_transition_mse": 1266622855929.007,
+  "state_transition_r2": 0.7379094956575579,
+  "next_step_f1": 0.8571428571428571,
+  "next_step_precision": 1.0,
+  "next_step_recall": 0.75,
+  "next_step_auc": 0.8970588235294117
+}

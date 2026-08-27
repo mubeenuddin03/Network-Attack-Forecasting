@@ -7,20 +7,65 @@ interface RiskTimelineChartProps {
   data: RiskTimelineData | null;
   width?: number;
   height?: number;
+  responsive?: boolean;
   className?: string;
   onPointHover?: (point: RiskTimelinePoint | null, index: number) => void;
 }
 
-export function RiskTimelineChart({ data, width = 800, height = 300, className, onPointHover }: RiskTimelineChartProps) {
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+export function RiskTimelineChart({
+  data,
+  width = 800,
+  height = 300,
+  responsive = false,
+  className,
+  onPointHover,
+}: RiskTimelineChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
   const { reducedMotion } = useReducedMotion();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [animationProgress, setAnimationProgress] = useState(0);
+  const [dim, setDim] = useState<{ w: number; h: number }>({ w: width, h: height });
 
   const points = useMemo(() => data?.points || [], [data]);
   const currentIndex = data?.current_index ?? points.length - 1;
   const threshold = data?.threshold ?? 0.5;
+
+  useEffect(() => {
+    if (!responsive) {
+      setDim({ w: width, h: height });
+      return;
+    }
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      setDim({ w: Math.max(rect.width, 240), h: height });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [responsive, width, height]);
 
   useEffect(() => {
     if (reducedMotion) {
@@ -38,18 +83,23 @@ export function RiskTimelineChart({ data, width = 800, height = 300, className, 
       animationRef.current = requestAnimationFrame(animate);
     };
     animate();
-    return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); };
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
   }, [data, reducedMotion]);
+
+  const cw = dim.w;
+  const ch = dim.h;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    canvas.width = Math.round(cw * dpr);
+    canvas.height = Math.round(ch * dpr);
+    canvas.style.width = responsive ? '100%' : `${cw}px`;
+    canvas.style.height = `${ch}px`;
 
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.scale(dpr, dpr);
@@ -58,10 +108,12 @@ export function RiskTimelineChart({ data, width = 800, height = 300, className, 
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const padding = 60;
-      const chartWidth = width - padding * 2;
-      
+      const chartWidth = cw - padding * 2;
+
       if (points.length > 1) {
-        const index = Math.round(clamp((x - padding) / chartWidth * (points.length - 1), 0, points.length - 1));
+        const index = Math.round(
+          clamp(((x - padding) / chartWidth) * (points.length - 1), 0, points.length - 1),
+        );
         setHoverIndex(index);
         onPointHover?.(points[index] ?? null, index);
       }
@@ -79,7 +131,7 @@ export function RiskTimelineChart({ data, width = 800, height = 300, className, 
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mouseleave', handleMouseLeave);
     };
-  }, [width, height, points, onPointHover]);
+  }, [cw, ch, responsive, points, onPointHover]);
 
   const drawChart = useCallback(() => {
     const canvas = canvasRef.current;
@@ -88,38 +140,40 @@ export function RiskTimelineChart({ data, width = 800, height = 300, className, 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, cw, ch);
 
     const padding = 60;
-    const chartWidth = width - padding * 2;
-    const chartHeight = height - padding * 2;
+    const chartWidth = cw - padding * 2;
+    const chartHeight = ch - padding * 2;
 
     ctx.save();
 
+    // Grid
     ctx.strokeStyle = 'rgba(148, 163, 184, 0.08)';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
       const y = padding + (chartHeight / 4) * i;
       ctx.beginPath();
       ctx.moveTo(padding, y);
-      ctx.lineTo(width - padding, y);
+      ctx.lineTo(cw - padding, y);
       ctx.stroke();
     }
     for (let i = 0; i <= 5; i++) {
       const x = padding + (chartWidth / 5) * i;
       ctx.beginPath();
       ctx.moveTo(x, padding);
-      ctx.lineTo(x, height - padding);
+      ctx.lineTo(x, ch - padding);
       ctx.stroke();
     }
 
+    // Threshold band
     const thresholdY = padding + chartHeight * (1 - threshold);
     ctx.setLineDash([6, 4]);
     ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(padding, thresholdY);
-    ctx.lineTo(width - padding, thresholdY);
+    ctx.lineTo(cw - padding, thresholdY);
     ctx.stroke();
     ctx.setLineDash([]);
 
@@ -127,21 +181,21 @@ export function RiskTimelineChart({ data, width = 800, height = 300, className, 
     ctx.fillRect(padding, 0, chartWidth, thresholdY);
 
     ctx.fillStyle = 'rgba(34, 197, 94, 0.05)';
-    ctx.fillRect(padding, thresholdY, chartWidth, height - padding - thresholdY);
+    ctx.fillRect(padding, thresholdY, chartWidth, ch - padding - thresholdY);
 
     if (points.length > 1) {
       const visiblePoints = Math.floor(points.length * animationProgress);
       if (visiblePoints >= 2) {
         const drawPoints = points.slice(0, visiblePoints);
 
-        const gradient = ctx.createLinearGradient(padding, padding, padding, height - padding);
+        const gradient = ctx.createLinearGradient(padding, padding, padding, ch - padding);
         gradient.addColorStop(0, 'rgba(239, 68, 68, 0.3)');
         gradient.addColorStop(0.5, 'rgba(245, 158, 11, 0.2)');
         gradient.addColorStop(1, 'rgba(34, 197, 94, 0.1)');
 
         const coords = drawPoints.map((p, i) => ({
           x: padding + (i / (points.length - 1)) * chartWidth,
-          y: height - padding - p.risk_score * chartHeight,
+          y: ch - padding - p.risk_score * chartHeight,
         }));
         const [firstCoord] = coords;
 
@@ -158,8 +212,8 @@ export function RiskTimelineChart({ data, width = 800, height = 300, className, 
             prevCoord = coord;
           }
 
-          ctx.lineTo(padding + chartWidth, height - padding);
-          ctx.lineTo(padding, height - padding);
+          ctx.lineTo(padding + chartWidth, ch - padding);
+          ctx.lineTo(padding, ch - padding);
           ctx.closePath();
 
           ctx.fillStyle = gradient;
@@ -182,10 +236,11 @@ export function RiskTimelineChart({ data, width = 800, height = 300, className, 
           ctx.globalAlpha = 1;
           ctx.stroke();
 
+          // Current index marker
           drawPoints.forEach((point, i) => {
             if (i === currentIndex) {
               const x = padding + (i / (points.length - 1)) * chartWidth;
-              const y = height - padding - point.risk_score * chartHeight;
+              const y = ch - padding - point.risk_score * chartHeight;
 
               ctx.beginPath();
               ctx.arc(x, y, 8, 0, Math.PI * 2);
@@ -200,36 +255,80 @@ export function RiskTimelineChart({ data, width = 800, height = 300, className, 
             }
           });
 
-          const hoverPoint = hoverIndex !== null && hoverIndex < drawPoints.length ? drawPoints[hoverIndex] : undefined;
-          const hoverCoord = hoverIndex !== null && hoverIndex < coords.length ? coords[hoverIndex] : undefined;
+          // Hover crosshair + tooltip
+          const hoverPoint =
+            hoverIndex !== null && hoverIndex < drawPoints.length ? drawPoints[hoverIndex] : undefined;
+          const hoverCoord =
+            hoverIndex !== null && hoverIndex < coords.length ? coords[hoverIndex] : undefined;
 
           if (hoverPoint && hoverCoord) {
-            const x = hoverCoord.x;
-            const y = hoverCoord.y;
+            const hx = hoverCoord.x;
+            const hy = hoverCoord.y;
 
+            // Vertical crosshair
+            ctx.save();
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.arc(x, y, 10, 0, Math.PI * 2);
-            ctx.strokeStyle = '#3b82f6';
+            ctx.moveTo(hx, padding);
+            ctx.lineTo(hx, ch - padding);
+            ctx.stroke();
+            ctx.restore();
+
+            // Highlight dot
+            ctx.beginPath();
+            ctx.arc(hx, hy, 6, 0, Math.PI * 2);
+            ctx.fillStyle = hoverPoint.is_forecast ? '#ef4444' : '#3b82f6';
+            ctx.fill();
             ctx.lineWidth = 2;
-            ctx.globalAlpha = 0.8;
+            ctx.strokeStyle = '#ffffff';
             ctx.stroke();
 
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-            ctx.fillRect(x + 15, y - 35, 160, 60);
-            ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
-            ctx.strokeRect(x + 15, y - 35, 160, 60);
+            // Tooltip
+            const accent = hoverPoint.is_forecast ? '#ef4444' : '#3b82f6';
+            const bw = 168;
+            const bh = 70;
+            let bx = hx + 16;
+            if (bx + bw > cw - padding) bx = hx - 16 - bw;
+            const by = clamp(hy - bh / 2, padding, ch - padding - bh);
 
-            ctx.fillStyle = '#f8fafc';
+            ctx.save();
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 16;
+            ctx.shadowOffsetY = 6;
+            roundRect(ctx, bx, by, bw, bh, 10);
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+            ctx.fill();
+            ctx.restore();
+
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+            ctx.lineWidth = 1;
+            roundRect(ctx, bx, by, bw, bh, 10);
+            ctx.stroke();
+
+            // Type pill
+            ctx.fillStyle = accent;
+            roundRect(ctx, bx + 12, by + 12, 10, 10, 3);
+            ctx.fill();
+            ctx.font = '600 11px Inter, system-ui';
+            ctx.fillStyle = accent;
+            ctx.textAlign = 'left';
+            ctx.fillText(hoverPoint.is_forecast ? 'FORECAST' : 'OBSERVED', bx + 28, by + 21);
+
             ctx.font = '12px Inter, system-ui';
-            ctx.fillText(`Risk: ${(hoverPoint.risk_score * 100).toFixed(1)}%`, x + 20, y - 20);
-            ctx.fillText(`Time: ${formatTimestamp(hoverPoint.timestamp)}`, x + 20, y - 5);
-            ctx.fillStyle = hoverPoint.is_forecast ? '#ef4444' : '#3b82f6';
-            ctx.fillText(hoverPoint.is_forecast ? 'FORECAST' : 'OBSERVED', x + 20, y + 10);
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillText(`Risk: ${(hoverPoint.risk_score * 100).toFixed(1)}%`, bx + 12, by + 42);
+
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.85)';
+            ctx.font = '11px Inter, system-ui';
+            ctx.fillText(formatTimestamp(hoverPoint.timestamp), bx + 12, by + 60);
           }
         }
       }
     }
 
+    // Y axis labels
     ctx.font = '11px Inter, system-ui';
     ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
     ctx.textAlign = 'center';
@@ -239,38 +338,61 @@ export function RiskTimelineChart({ data, width = 800, height = 300, className, 
       ctx.fillText(`${val.toFixed(0)}%`, padding - 30, y + 4);
     }
 
-    ctx.textAlign = 'center';
+    // X axis labels
     for (let i = 0; i <= 5; i++) {
       const x = padding + (chartWidth / 5) * i;
       const timeOffset = Math.round((points.length - 1 - i) * 5);
-      ctx.fillText(`${timeOffset}m ago`, x, height - padding + 20);
+      ctx.fillText(`${timeOffset}m ago`, x, ch - padding + 20);
     }
 
     ctx.restore();
-  }, [width, height, points, currentIndex, threshold, hoverIndex, animationProgress, onPointHover]);
+  }, [cw, ch, points, currentIndex, threshold, hoverIndex, animationProgress, onPointHover]);
 
   useEffect(() => {
     drawChart();
   }, [drawChart]);
 
+  if (!responsive) {
+    return (
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        className={cn('block cursor-crosshair', className)}
+        tabIndex={0}
+        role="img"
+        aria-label="Risk timeline chart showing attack probability over time with forecast horizon"
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft' && hoverIndex !== null && hoverIndex > 0) {
+            setHoverIndex(hoverIndex - 1);
+            onPointHover?.(points[hoverIndex - 1] ?? null, hoverIndex - 1);
+          } else if (e.key === 'ArrowRight' && hoverIndex !== null && hoverIndex < points.length - 1) {
+            setHoverIndex(hoverIndex + 1);
+            onPointHover?.(points[hoverIndex + 1] ?? null, hoverIndex + 1);
+          }
+        }}
+      />
+    );
+  }
+
   return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      className={cn('w-full h-full block', className)}
-      tabIndex={0}
-      role="img"
-      aria-label="Risk timeline chart showing attack probability over time with forecast horizon"
-      onKeyDown={(e) => {
-        if (e.key === 'ArrowLeft' && hoverIndex !== null && hoverIndex > 0) {
-          setHoverIndex(hoverIndex - 1);
-          onPointHover?.(points[hoverIndex - 1] ?? null, hoverIndex - 1);
-        } else if (e.key === 'ArrowRight' && hoverIndex !== null && hoverIndex < points.length - 1) {
-          setHoverIndex(hoverIndex + 1);
-          onPointHover?.(points[hoverIndex + 1] ?? null, hoverIndex + 1);
-        }
-      }}
-    />
+    <div ref={containerRef} className={cn('w-full', className)}>
+      <canvas
+        ref={canvasRef}
+        tabIndex={0}
+        role="img"
+        aria-label="Risk timeline chart showing attack probability over time with forecast horizon"
+        className="block w-full cursor-crosshair"
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft' && hoverIndex !== null && hoverIndex > 0) {
+            setHoverIndex(hoverIndex - 1);
+            onPointHover?.(points[hoverIndex - 1] ?? null, hoverIndex - 1);
+          } else if (e.key === 'ArrowRight' && hoverIndex !== null && hoverIndex < points.length - 1) {
+            setHoverIndex(hoverIndex + 1);
+            onPointHover?.(points[hoverIndex + 1] ?? null, hoverIndex + 1);
+          }
+        }}
+      />
+    </div>
   );
 }

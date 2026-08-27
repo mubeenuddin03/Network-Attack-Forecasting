@@ -6,6 +6,46 @@ export interface DashboardPrediction extends PredictResponse {
   latency_ms: number;
 }
 
+export interface DatasetInfo {
+  filename: string;
+  file_size_bytes: number;
+  row_count: number;
+  window_count: number;
+  time_range_start: string;
+  time_range_end: string;
+  schema_info?: {
+    mapped_columns?: number;
+    detected_canonical?: string[];
+  };
+}
+
+export interface UploadPrediction {
+  attack_probability: number;
+  prediction: 0 | 1;
+  status: 'ATTACK_LIKELY' | 'NORMAL';
+  mode: ModelMode;
+  threshold_used: number;
+  window_start: string;
+  window_end: string;
+  features: WindowFeatures;
+  horizons?: Array<{
+    horizonMinutes: number;
+    stepLabel: string;
+    probability: number;
+    lowerBound: number;
+    upperBound: number;
+    projectedStage: string;
+    stateVector: { synRate: number; portEntropy: number; flowIntensity: number; packetTimingVar: number };
+    predictedFeatures?: Record<string, number>;
+  }>;
+  rollout?: Array<any>;
+}
+
+export interface UploadResponse {
+  dataset: DatasetInfo;
+  prediction: UploadPrediction;
+}
+
 export interface DashboardHealth extends HealthResponse {
   checked_at: string;
   latency_ms: number;

@@ -6,9 +6,10 @@ import type {
   WindowFeatures,
   ModelMode,
 } from '@/types/api';
-import type { DashboardPrediction, DashboardHealth } from '@/types/dashboard';
+import type { DashboardPrediction, DashboardHealth, UploadResponse } from '@/types/dashboard';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+export const MAX_CSV_SIZE_BYTES = 300 * 1024 * 1024;
 const REQUEST_TIMEOUT = 10000;
 const HEALTH_CHECK_INTERVAL = 30000;
 const PREDICTION_POLL_INTERVAL = 15000;
@@ -111,6 +112,52 @@ class ApiClient {
 
     this.notifyPredictionCallbacks(prediction);
     return prediction;
+  }
+
+  async uploadCsv(
+    file: File,
+    onProgress?: (percent: number) => void
+  ): Promise<UploadResponse> {
+    if (file.size > MAX_CSV_SIZE_BYTES) {
+      throw new ApiError(413, `File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is 300 MB.`);
+    }
+
+    return new Promise<UploadResponse>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/upload`);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          onProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText) as UploadResponse);
+          } catch {
+            reject(new ApiError(xhr.status, 'Invalid server response'));
+          }
+        } else {
+          let message = `HTTP ${xhr.status}`;
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (data && data.detail) message = data.detail;
+          } catch {
+            /* keep default message */
+          }
+          reject(new ApiError(xhr.status, message));
+        }
+      };
+
+      xhr.onerror = () => reject(new ApiError(0, 'Network error during upload'));
+      xhr.onabort = () => reject(new ApiError(0, 'Upload cancelled'));
+
+      const form = new FormData();
+      form.append('file', file);
+      xhr.send(form);
+    });
   }
 
   onHealthChange(callback: (health: DashboardHealth) => void): () => void {

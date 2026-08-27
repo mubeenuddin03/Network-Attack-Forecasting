@@ -4,7 +4,7 @@ import { cn, formatPercent } from '@/utils/helpers';
 import { ForecastKPICard } from '@/components/panels/KPICards';
 import { KPICard } from '@/components/panels/KPICards';
 import { NetworkTopologyCanvas } from '@/components/visualizations/NetworkTopologyCanvas';
-import { RiskTimelineChart } from '@/components/visualizations/RiskTimelineChart';
+import { AreaForecastChart } from '@/components/visualizations/AreaForecastChart';
 import { usePrediction, useTelemetry, useRiskTimeline, useDefenderFocus, useApiStatus, useModelMode, useIsLoading, useError } from '@/contexts/DashboardContext';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -107,7 +107,7 @@ export function Hero() {
                   <span className="text-caption text-text-secondary">Suspicious Activity</span>
                 </div>
                 <div className="flex items-center gap-2 bg-surface-950/80 backdrop-blur-sm px-3 py-2 rounded-lg border border-border-subtle">
-                  <span className="w-3 h-3 rounded-full bg-critical-400 animate-pulse" />
+                  <span className="w-3 h-3 rounded-full bg-critical-400 pulse-dot" />
                   <span className="text-caption text-text-secondary">Attack Indicators</span>
                 </div>
                 <div className="flex items-center gap-2 bg-surface-950/80 backdrop-blur-sm px-3 py-2 rounded-lg border border-border-subtle">
@@ -177,7 +177,7 @@ export function Hero() {
             </CardHeader>
             <CardContent className="p-0">
               {riskTimeline ? (
-                <RiskTimelineChart data={riskTimeline} width={800} height={280} />
+                <AreaForecastChart data={riskTimeline} height={280} />
               ) : (
                 <ChartSkeleton />
               )}

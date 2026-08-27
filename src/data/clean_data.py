@@ -27,10 +27,18 @@ def handle_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
-    """Parse timestamp column explicitly."""
+    """Parse timestamp column explicitly with fallback support."""
     df = df.copy()
-    # Format: M/D/YYYY H:MM (e.g., 7/7/2017 1:00)
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%m/%d/%Y %H:%M')
+    try:
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%m/%d/%Y %H:%M')
+    except Exception:
+        try:
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='mixed')
+        except Exception:
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    
+    # Drop rows with unparseable timestamps if any
+    df = df.dropna(subset=['Timestamp'])
     print(f"  Parsed timestamps: range {df['Timestamp'].min()} to {df['Timestamp'].max()}")
     return df
 
@@ -84,11 +92,18 @@ def create_binary_label(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+from src.data.schema_detector import standardize_dataframe
+
+
 def clean_data(input_path: str, output_path: str) -> pd.DataFrame:
-    """Full cleaning pipeline."""
+    """Full cleaning pipeline with dynamic schema normalization."""
     print(f"Loading: {input_path}")
     df = pd.read_csv(input_path)
     print(f"  Raw shape: {df.shape}")
+    
+    # 1. Automatic Schema Mapping & Canonical Normalization
+    df, schema_info = standardize_dataframe(df)
+    print(f"  Schema normalized ({schema_info['mapped_count']} columns mapped)")
     
     df = clean_column_names(df)
     df = handle_duplicate_columns(df)

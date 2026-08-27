@@ -286,10 +286,44 @@ def train_forecasting_model(input_path: str, model_dir: str):
     print(f"  Test Recall: {test_metrics['recall']:.4f}")
     print(f"  Test Precision: {test_metrics['precision']:.4f}")
 
+    # Also train and save Temporal World Model
+    try:
+        train_world_model_from_windows(df, "models/world_model")
+    except Exception as e:
+        print(f"World model training skipped: {e}")
+
     return model, scaler, feature_cols, all_metrics
+
+
+def train_world_model_from_windows(df: pd.DataFrame, output_dir: str = "models/world_model"):
+    """Train the Temporal World Model P(S_{t+1}|S_t) on consecutive temporal windows."""
+    from src.models.world_model import TemporalWorldModel, STATE_FEATURES
+    print("\n" + "=" * 60)
+    print("TRAINING TEMPORAL WORLD MODEL (STATE TRANSITION DYNAMICS)")
+    print("=" * 60)
+
+    df_sorted = df.sort_values('window_start').reset_index(drop=True)
+    feature_cols = [c for c in STATE_FEATURES if c in df_sorted.columns]
+
+    X_current = df_sorted.iloc[:-1][feature_cols]
+    X_next = df_sorted.iloc[1:][feature_cols]
+    y_next = df_sorted.iloc[1:]['window_has_attack'] if 'window_has_attack' in df_sorted.columns else df_sorted.iloc[:-1]['future_attack']
+
+    wm = TemporalWorldModel(feature_names=feature_cols)
+    metrics = wm.fit(X_current, X_next, y_next)
+
+    print(f"  State Dimension: {metrics['state_dimension']}")
+    print(f"  State Transition R2: {metrics['state_transition_r2']:.4f}")
+    print(f"  Next-Step Forecast F1: {metrics['next_step_f1']:.4f}")
+    print(f"  Next-Step Forecast Precision: {metrics['next_step_precision']:.4f}")
+    print(f"  Next-Step Forecast Recall: {metrics['next_step_recall']:.4f}")
+
+    wm.save(Path(output_dir))
+    return wm
 
 
 if __name__ == "__main__":
     input_file = "data/processed/windowed_data.parquet"
     model_dir = "models/baseline"
     train_forecasting_model(input_file, model_dir)
+

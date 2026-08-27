@@ -14,10 +14,10 @@ const TOAST_ICONS = {
 };
 
 const TOAST_COLORS = {
-  success: { bg: 'bg-secure-500/15', border: 'border-secure-500/30', text: 'text-secure-400', icon: 'text-secure-400' },
-  warning: { bg: 'bg-amber-500/15', border: 'border-amber-500/30', text: 'text-amber-400', icon: 'text-amber-400' },
-  error: { bg: 'bg-critical-500/15', border: 'border-critical-500/30', text: 'text-critical-400', icon: 'text-critical-400' },
-  info: { bg: 'bg-electric-500/15', border: 'border-electric-500/30', text: 'text-electric-400', icon: 'text-electric-400' },
+  success: { bg: 'bg-secure-500/15', border: 'border-secure-500/30', text: 'text-secure-400', icon: 'text-secure-400', hex: '#4ade80' },
+  warning: { bg: 'bg-amber-500/15', border: 'border-amber-500/30', text: 'text-amber-400', icon: 'text-amber-400', hex: '#fbbf24' },
+  error: { bg: 'bg-critical-500/15', border: 'border-critical-500/30', text: 'text-critical-400', icon: 'text-critical-400', hex: '#f87171' },
+  info: { bg: 'bg-electric-500/15', border: 'border-electric-500/30', text: 'text-electric-400', icon: 'text-electric-400', hex: '#60a5fa' },
 };
 
 function ToastItem({ toast, onClose }: { toast: ReturnType<typeof useToasts>[0]; onClose: (id: string) => void }) {
@@ -77,7 +77,7 @@ function ToastItem({ toast, onClose }: { toast: ReturnType<typeof useToasts>[0];
           <button
             onClick={() => { play('click'); action.onClick(); }}
             className="mt-3 text-caption font-medium underline hover:no-underline"
-            style={{ color: colors.icon }}
+            style={{ color: colors.hex }}
           >
             {action.label}
           </button>
@@ -88,7 +88,7 @@ function ToastItem({ toast, onClose }: { toast: ReturnType<typeof useToasts>[0];
           initial={false}
           animate={{ width: `${progress}%` }}
           className="absolute bottom-0 left-0 h-1 rounded-b-xl"
-          style={{ backgroundColor: colors.icon }}
+          style={{ backgroundColor: colors.hex }}
         />
       )}
     </motion.div>

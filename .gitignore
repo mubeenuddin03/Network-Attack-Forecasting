@@ -4,10 +4,12 @@ data/raw/*
 data/processed/
 *.pcap_ISCX.csv
 
-# Models - ignore generated models, but ALLOW the trained baseline (small, required for deployment)
+# Models - ignore generated models, but ALLOW the trained baseline and world_model
 models/*
 !models/baseline/
 !models/baseline/*
+!models/world_model/
+!models/world_model/*
 
 # Python cache
 __pycache__/
@@ -15,14 +17,18 @@ __pycache__/
 
 # Secrets
 .env
+.env.*
 
 # Jupyter
 .ipynb_checkpoints/
 
-# Large generated data files (but NOT models/baseline/)
+# Large generated data files
 *.parquet
 *.joblib
 !models/baseline/*.joblib
+!models/world_model/*.joblib
+build_output*.txt
+typescript_errors*.txt
 
 .DS_Store
 

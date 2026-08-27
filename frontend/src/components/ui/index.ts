@@ -7,3 +7,5 @@ export { Modal } from './Modal';
 export { Drawer } from './Drawer';
 export { Skeleton, KPISkeleton, ChartSkeleton, TableRowSkeleton, CardSkeleton, HeroSkeleton, SidebarSkeleton } from './Skeleton';
 export { ErrorBoundary, ErrorFallback } from './ErrorBoundary';
+export { Reveal, RevealItem } from './Reveal';
+export { TiltCard } from './TiltCard';

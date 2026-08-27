@@ -232,18 +232,18 @@ export function ForecastKPICard({
 
   const riskLevel = probability >= 0.8 ? 'CRITICAL' : probability >= 0.6 ? 'HIGH' : probability >= 0.4 ? 'ELEVATED' : probability >= 0.2 ? 'LOW' : 'MINIMAL';
   const riskColors = {
-    CRITICAL: { bg: 'bg-critical-500/15', text: 'text-critical-400', border: 'border-critical-500/30', glow: 'glow-critical' },
-    HIGH: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', glow: 'glow-amber' },
-    ELEVATED: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', glow: 'glow-amber' },
-    LOW: { bg: 'bg-electric-500/15', text: 'text-electric-400', border: 'border-electric-500/30', glow: 'glow-sm' },
-    MINIMAL: { bg: 'bg-secure-500/15', text: 'text-secure-400', border: 'border-secure-500/30', glow: 'glow-secure' },
+    CRITICAL: { bg: 'bg-critical-500/15', text: 'text-critical-400', border: 'border-critical-500/30', glow: 'glow-critical', hex: '#f87171' },
+    HIGH: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', glow: 'glow-amber', hex: '#fbbf24' },
+    ELEVATED: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', glow: 'glow-amber', hex: '#fbbf24' },
+    LOW: { bg: 'bg-electric-500/15', text: 'text-electric-400', border: 'border-electric-500/30', glow: 'glow-sm', hex: '#60a5fa' },
+    MINIMAL: { bg: 'bg-secure-500/15', text: 'text-secure-400', border: 'border-secure-500/30', glow: 'glow-secure', hex: '#4ade80' },
   };
   const colors = riskColors[riskLevel as keyof typeof riskColors];
 
   const isAttackLikely = status === 'ATTACK_LIKELY';
   const modeColors = mode === 'REAL_MODEL' 
-    ? { bg: 'bg-electric-500/15', text: 'text-electric-400', border: 'border-electric-500/30' }
-    : { bg: 'bg-violet-500/15', text: 'text-violet-400', border: 'border-violet-500/30' };
+    ? { bg: 'bg-electric-500/15', text: 'text-electric-400', border: 'border-electric-500/30', hex: '#60a5fa' }
+    : { bg: 'bg-violet-500/15', text: 'text-violet-400', border: 'border-violet-500/30', hex: '#a78bfa' };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (reducedMotion) return;
@@ -346,7 +346,7 @@ export function ForecastKPICard({
               animate={{ width: `${clamp(displayProbability, 0, 1) * 100}%` }}
               transition={{ duration: reducedMotion ? 0 : 800, ease: [0.34, 1.56, 0.64, 1] }}
               className="h-full rounded-full relative"
-              style={{ background: `linear-gradient(90deg, ${colors.text.replace('text-', '')}, ${colors.text.replace('text-', '')}cc)` }}
+              style={{ background: `linear-gradient(90deg, ${colors.hex}, ${colors.hex}cc)` }}
             >
               <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-r from-transparent to-white/20" />
             </motion.div>
@@ -381,7 +381,7 @@ export function ForecastKPICard({
             <span className="w-2 h-2 rounded-full bg-critical-400" />
             Future Forecast
           </span>
-          <span className="flex items-center gap-1.5 ml-auto" style={{ color: modeColors.text }}>
+            <span className="flex items-center gap-1.5 ml-auto" style={{ color: modeColors.hex }}>
             {mode === 'REAL_MODEL' ? '🔒 Trained Model' : '⚠️ Heuristic Demo'}
           </span>
         </div>

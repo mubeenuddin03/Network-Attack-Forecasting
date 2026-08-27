@@ -233,15 +233,15 @@ export function PredictionInspector({ isOpen, onClose }: PredictionInspectorProp
               <Database className="w-5 h-5" />
               Input Features (35 dimensions)
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {featureGroups.map((group) => (
                 <div key={group.label} className="p-3 rounded-lg bg-surface-800/50 border border-border-subtle">
                   <p className="text-caption font-medium text-text-muted mb-2">{group.label}</p>
                   <dl className="space-y-1.5 text-sm">
                     {group.keys.map((key) => (
-                      <div key={key} className="flex justify-between gap-2">
+                      <div key={key} className="flex justify-between gap-2 min-w-0">
                         <dt className="text-caption text-text-secondary font-mono truncate">{key}</dt>
-                        <dd className="text-caption font-mono text-text-primary text-right whitespace-nowrap">
+                        <dd className="text-caption font-mono text-text-primary text-right truncate" title={features?.[key] !== undefined ? formatNumber(features[key]) : 'N/A'}>
                           {features?.[key] !== undefined ? formatNumber(features[key]) : 'N/A'}
                         </dd>
                       </div>
