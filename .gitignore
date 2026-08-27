@@ -36,8 +36,9 @@ typescript_errors*.txt
 # Dependencies
 frontend/node_modules/
 
-# Build output
-frontend/dist/
+# Build output - allow frontend/dist so single-service deployment has static bundle
+!frontend/dist/
+!frontend/dist/**
 frontend/dist-ssr/
 
 # Local env files / secrets

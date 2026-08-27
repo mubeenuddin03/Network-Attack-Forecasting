@@ -540,20 +540,33 @@ async def upload_csv(file: UploadFile = File(...)):
 app.include_router(api_router, prefix="/api")
 
 # Serve React SPA from frontend/dist
-DIST_DIR = Path("frontend/dist")
+BASE_DIR = Path(__file__).resolve().parent
+DIST_DIR = BASE_DIR / "frontend" / "dist"
+
 if DIST_DIR.exists():
-    if (DIST_DIR / "assets").exists():
-        app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+    assets_dir = DIST_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/")
+    async def serve_root():
+        index_file = DIST_DIR / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return JSONResponse({"status": "Frontend building", "endpoints": "/docs"})
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        # Do not catch openapi / docs
-        if full_path in ["docs", "redoc", "openapi.json"]:
+        # Do not catch openapi / docs or api routes
+        if full_path in ["docs", "redoc", "openapi.json"] or full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not found")
         target_file = DIST_DIR / full_path
         if full_path and target_file.exists() and target_file.is_file():
             return FileResponse(target_file)
-        return FileResponse(DIST_DIR / "index.html")
+        index_file = DIST_DIR / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return JSONResponse({"status": "Frontend building", "endpoints": "/docs"})
 
 
 if __name__ == "__main__":

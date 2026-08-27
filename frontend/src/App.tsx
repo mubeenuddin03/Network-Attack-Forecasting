@@ -1,7 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
-import { CsvUpload } from '@/components/panels/CsvUpload';
+import { CsvUpload } from '@/components/panels/CSVUpload';
 import { DatasetPanel } from '@/components/panels/DatasetPanel';
 import { PredictionInspector } from '@/components/modals/PredictionInspector';
 import { Card } from '@/components/ui';

@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { UploadCloud, FileText, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { cn } from '@/utils/helpers';
-import { apiClient, type CSVUploadResult } from '@/services/api';
+import { apiClient } from '@/services/api';
+import type { UploadResponse } from '@/types/dashboard';
 import { useDashboardStore } from '@/contexts/DashboardContext';
 
 const MAX_BYTES = 300 * 1024 * 1024;
@@ -12,13 +13,13 @@ function formatSize(bytes: number) {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-export function CSVUpload() {
+export function CsvUpload() {
   const inputRef = useRef<HTMLInputElement>(null);
   const setCurrentFeatures = useDashboardStore(state => state.setCurrentFeatures);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState(0);
   const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<CSVUploadResult | null>(null);
+  const [result, setResult] = useState<UploadResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const upload = async (file?: File) => {
@@ -31,9 +32,11 @@ export function CSVUpload() {
 
     try {
       setProcessing(true);
-      const uploaded = await apiClient.uploadCSV(file, setProgress);
+      const uploaded = await apiClient.uploadCsv(file, setProgress);
       setResult(uploaded);
-      setCurrentFeatures(uploaded.latest_window);
+      if (uploaded?.prediction?.features) {
+        setCurrentFeatures(uploaded.prediction.features);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'CSV upload failed.');
     } finally {
@@ -87,11 +90,11 @@ export function CSVUpload() {
 
       {result && (
         <div className="glass-panel rounded-xl p-5 border border-secure-500/20">
-          <div className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-secure-400 mt-0.5" /><div className="min-w-0 flex-1"><p className="font-semibold text-text-primary">Dataset loaded</p><p className="text-caption text-text-muted mt-1">{result.filename}</p></div><FileText className="w-5 h-5 text-text-muted" /></div>
+          <div className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-secure-400 mt-0.5" /><div className="min-w-0 flex-1"><p className="font-semibold text-text-primary">Dataset loaded</p><p className="text-caption text-text-muted mt-1">{result.dataset.filename}</p></div><FileText className="w-5 h-5 text-text-muted" /></div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
-            <Stat label="File size" value={formatSize(result.size_bytes)} />
-            <Stat label="Rows" value={result.rows.toLocaleString()} />
-            <Stat label="5-min windows" value={result.windows.toLocaleString()} />
+            <Stat label="File size" value={formatSize(result.dataset.file_size_bytes)} />
+            <Stat label="Rows" value={result.dataset.row_count.toLocaleString()} />
+            <Stat label="5-min windows" value={result.dataset.window_count.toLocaleString()} />
             <Stat label="Latest window" value="Loaded" />
           </div>
           <p className="text-caption text-secure-400 mt-4">Latest window is now being used by the dashboard prediction.</p>
@@ -100,6 +103,8 @@ export function CSVUpload() {
     </section>
   );
 }
+
+export const CSVUpload = CsvUpload;
 
 function Stat({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg bg-surface-800/60 border border-border-subtle p-3"><p className="text-caption text-text-muted">{label}</p><p className="text-body font-semibold text-text-primary mt-1">{value}</p></div>;
