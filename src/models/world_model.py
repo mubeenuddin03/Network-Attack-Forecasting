@@ -150,8 +150,18 @@ class TemporalWorldModel:
         """
         trajectory: List[Dict[str, Any]] = []
 
+        # Convert initial_state to dict if it is a Pydantic model or mapping
+        if hasattr(initial_state, "model_dump"):
+            state_dict = initial_state.model_dump()
+        elif hasattr(initial_state, "dict"):
+            state_dict = initial_state.dict()
+        elif isinstance(initial_state, dict):
+            state_dict = initial_state
+        else:
+            state_dict = dict(initial_state)
+
         # Convert dict to array in canonical feature order
-        state_vec = np.array([float(initial_state.get(col, 0.0)) for col in self.feature_names]).reshape(1, -1)
+        state_vec = np.array([float(state_dict.get(col, 0.0)) for col in self.feature_names]).reshape(1, -1)
         base_prob = self.evaluate_risk(state_vec)
 
         # T+0 (Current state)

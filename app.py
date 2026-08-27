@@ -212,6 +212,9 @@ async def lifespan(app: FastAPI):
 
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter
 
 app = FastAPI(
     title="Network Attack Forecasting API",
@@ -228,21 +231,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+api_router = APIRouter()
 
-@app.get("/", response_model=RootResponse)
+
+@api_router.get("/", response_model=RootResponse)
+@app.get("/api-info", response_model=RootResponse)
 async def root():
     """Root endpoint with API information."""
     return RootResponse(
         message="Network Attack Forecasting API",
         version="1.0.0",
         endpoints={
-            "health": "GET /health - Check API and model status",
-            "predict": "POST /predict - Predict attack probability for next 5-minute window",
-            "docs": "GET /docs - Interactive API documentation (Swagger UI)"
+            "health": "GET /api/health or /health - Check API and model status",
+            "predict": "POST /api/predict or /predict - Predict attack probability",
+            "upload": "POST /api/upload or /upload - Multipart CSV upload & World Model rollout",
+            "benchmarks": "GET /api/benchmarks or /benchmarks - Empirical comparative metrics",
+            "rollout": "POST /api/rollout or /rollout - Autoregressive K-step state simulation",
+            "docs": "GET /docs - Interactive Swagger API documentation"
         }
     )
 
 
+@api_router.get("/health", response_model=HealthResponse)
 @app.get("/health", response_model=HealthResponse)
 async def health():
     """Health check endpoint."""
@@ -275,6 +285,7 @@ async def health():
         )
 
 
+@api_router.get("/benchmarks")
 @app.get("/benchmarks")
 async def get_benchmarks():
     """Return real evaluation metrics comparing Baseline LR vs Temporal World Model."""
@@ -302,6 +313,7 @@ async def get_benchmarks():
     }
 
 
+@api_router.post("/rollout")
 @app.post("/rollout")
 async def forward_rollout(request: PredictRequest, k_steps: int = 4):
     """Execute real autoregressive K-step forward simulation from input state."""
@@ -317,6 +329,7 @@ async def forward_rollout(request: PredictRequest, k_steps: int = 4):
     }
 
 
+@api_router.post("/predict", response_model=PredictResponse)
 @app.post("/predict", response_model=PredictResponse)
 async def predict(request: PredictRequest):
     """
@@ -475,6 +488,7 @@ def process_upload(tmp_csv_path: str, original_filename: str, file_size: int) ->
     }
 
 
+@api_router.post("/upload", response_model=None)
 @app.post("/upload", response_model=None)
 async def upload_csv(file: UploadFile = File(...)):
     """Multipart CSV upload (max 300 MB) -> clean, window, and run the
@@ -522,6 +536,27 @@ async def upload_csv(file: UploadFile = File(...)):
     return result
 
 
+# Include the API router so /api/* routes resolve identically
+app.include_router(api_router, prefix="/api")
+
+# Serve React SPA from frontend/dist
+DIST_DIR = Path("frontend/dist")
+if DIST_DIR.exists():
+    if (DIST_DIR / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Do not catch openapi / docs
+        if full_path in ["docs", "redoc", "openapi.json"]:
+            raise HTTPException(status_code=404, detail="Not found")
+        target_file = DIST_DIR / full_path
+        if full_path and target_file.exists() and target_file.is_file():
+            return FileResponse(target_file)
+        return FileResponse(DIST_DIR / "index.html")
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
