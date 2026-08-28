@@ -1,0 +1,357 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: #0b1322;
+    --color-surface: #121d33;
+    --color-card: #1b2942;
+    --color-border: rgba(148, 163, 184, 0.16);
+  }
+
+  * {
+    @apply border-border-subtle;
+  }
+
+  html {
+    @apply scroll-smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-surface-950 text-text-primary font-ui min-h-screen;
+  }
+
+  ::selection {
+    @apply bg-electric-600/30 text-text-primary;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-electric-500 ring-offset-2 ring-offset-surface-950;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-surface-850/80 backdrop-blur-xl border border-border-subtle;
+    background-image:
+      linear-gradient(135deg, rgba(255,255,255,0.03) 0%, transparent 50%),
+      linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 100%);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.04) inset,
+      0 -1px 0 rgba(0,0,0,0.2) inset,
+      0 4px 24px rgba(0,0,0,0.4),
+      0 0 0 1px rgba(148,163,184,0.05);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .glass-panel:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45), 0 4px 20px rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.35);
+  }
+
+  .glass-panel-elevated {
+    @apply bg-surface-850/90 backdrop-blur-2xl border border-border-default;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.06) inset,
+      0 -1px 0 rgba(0,0,0,0.15) inset,
+      0 12px 40px rgba(0,0,0,0.5),
+      0 0 0 1px rgba(148,163,184,0.08);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .glass-panel-elevated:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 4px 20px rgba(59, 130, 246, 0.18);
+    border-color: rgba(59, 130, 246, 0.4);
+  }
+
+  .glass-panel-strong {
+    @apply bg-surface-800/95 backdrop-blur-2xl border border-border-strong;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.08) inset,
+      0 -1px 0 rgba(0,0,0,0.1) inset,
+      0 20px 60px rgba(0,0,0,0.6),
+      0 0 0 1px rgba(148,163,184,0.12);
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+      bg-electric-600 text-white font-medium text-body-sm
+      rounded-lg transition-all duration-200 ease-spring
+      hover:bg-electric-500 hover:shadow-glow-md
+      active:scale-[0.98] active:bg-electric-700
+      disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-electric-600 disabled:hover:shadow-none
+      focus-visible:ring-2 focus-visible:ring-electric-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
+      bg-surface-800 text-text-primary font-medium text-body-sm
+      border border-border-default rounded-lg
+      transition-all duration-200 ease-spring
+      hover:bg-surface-700 hover:border-border-strong
+      active:scale-[0.98]
+      disabled:opacity-50 disabled:cursor-not-allowed
+      focus-visible:ring-2 focus-visible:ring-electric-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2
+      text-text-secondary font-medium text-body-sm
+      rounded-lg transition-all duration-150
+      hover:bg-surface-800 hover:text-text-primary
+      active:scale-[0.98]
+      disabled:opacity-50 disabled:cursor-not-allowed
+      focus-visible:ring-2 focus-visible:ring-electric-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950;
+  }
+
+  .btn-icon {
+    @apply inline-flex items-center justify-center p-2
+      text-text-secondary rounded-lg
+      transition-all duration-150
+      hover:bg-surface-800 hover:text-text-primary
+      active:scale-[0.95]
+      disabled:opacity-50 disabled:cursor-not-allowed
+      focus-visible:ring-2 focus-visible:ring-electric-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950;
+  }
+
+  .kpi-card {
+    @apply glass-panel rounded-2xl p-5 transition-all duration-300 ease-spring
+      hover:shadow-glow-sm hover:border-border-default
+      relative overflow-hidden;
+  }
+
+  .kpi-card::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-electric-500/5 via-transparent to-violet-500/5 opacity-0 transition-opacity duration-300;
+  }
+
+  .kpi-card:hover::before {
+    @apply opacity-100;
+  }
+
+  .status-indicator {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5
+      text-caption font-medium uppercase tracking-wider
+      rounded-full border transition-all duration-200;
+  }
+
+  .status-connected {
+    @apply bg-secure-500/15 text-secure-400 border-secure-500/30;
+  }
+
+  .status-degraded {
+    @apply bg-amber-500/15 text-amber-400 border-amber-500/30;
+  }
+
+  .status-offline {
+    @apply bg-critical-500/15 text-critical-400 border-critical-500/30;
+  }
+
+  .status-real-model {
+    @apply bg-electric-500/15 text-electric-400 border-electric-500/30;
+  }
+
+  .status-demo {
+    @apply bg-violet-500/15 text-violet-400 border-violet-500/30;
+  }
+
+  .toast-enter {
+    animation: toastEnter 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+
+  .toast-exit {
+    animation: toastExit 200ms ease-in forwards;
+  }
+
+  @keyframes toastEnter {
+    from {
+      opacity: 0;
+      transform: translateX(100%) translateY(-50%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) translateY(-50%);
+    }
+  }
+
+  @keyframes toastExit {
+    from {
+      opacity: 1;
+      transform: translateX(0) translateY(-50%);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(100%) translateY(-50%);
+    }
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.border.default') transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: theme('colors.border.default');
+    border-radius: 3px;
+    border: none;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.border.strong');
+  }
+
+  .text-gradient-electric {
+    @apply bg-gradient-to-r from-electric-400 to-electric-600 bg-clip-text text-transparent;
+  }
+
+  .text-gradient-violet {
+    @apply bg-gradient-to-r from-violet-400 to-violet-600 bg-clip-text text-transparent;
+  }
+
+  .text-gradient-amber {
+    @apply bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent;
+  }
+
+  .text-gradient-critical {
+    @apply bg-gradient-to-r from-critical-400 to-critical-600 bg-clip-text text-transparent;
+  }
+
+  .text-gradient-secure {
+    @apply bg-gradient-to-r from-secure-400 to-secure-600 bg-clip-text text-transparent;
+  }
+}
+
+@layer utilities {
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-300 { animation-delay: 300ms; }
+  .animation-delay-400 { animation-delay: 400ms; }
+  .animation-delay-500 { animation-delay: 500ms; }
+
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  .backface-hidden {
+    backface-visibility: hidden;
+  }
+}
+
+/* ============================================================
+   NAF neon design tokens + utilities (ported from Lovable)
+   These layer on top of the existing graphite/electric palette so
+   Recharts visuals, tooltips and card glows can share one neon
+   language without touching the real API / data flow.
+   ============================================================ */
+:root {
+  --neon-indigo: oklch(0.65 0.21 275);
+  --neon-purple: oklch(0.68 0.23 305);
+  --neon-cyan: oklch(0.79 0.15 200);
+  --neon-red: oklch(0.66 0.24 22);
+  --neon-amber: oklch(0.8 0.16 78);
+  --neon-green: oklch(0.78 0.18 155);
+
+  /* Tokens referenced by Recharts tooltip / axis styling */
+  --popover: #15203a;
+  --popover-foreground: #f8fafc;
+  --muted-foreground: #aab7c9;
+  --surface: #121d33;
+  --border: rgba(148, 163, 184, 0.16);
+
+  --glow-indigo: 0 0 0 1px oklch(0.65 0.21 275 / 35%), 0 18px 50px -18px oklch(0.65 0.21 275 / 60%);
+  --glow-cyan: 0 0 0 1px oklch(0.79 0.15 200 / 35%), 0 18px 50px -18px oklch(0.79 0.15 200 / 55%);
+  --glow-red: 0 0 0 1px oklch(0.66 0.24 22 / 40%), 0 18px 50px -18px oklch(0.66 0.24 22 / 60%);
+  --gradient-hero: radial-gradient(1200px 600px at 15% -10%, oklch(0.65 0.21 275 / 22%), transparent 60%),
+    radial-gradient(900px 500px at 90% 0%, oklch(0.79 0.15 200 / 14%), transparent 55%);
+}
+
+@layer components {
+  .glass {
+    background: color-mix(in oklab, var(--surface) 55%, transparent);
+    backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid var(--border);
+    box-shadow:
+      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+      0 24px 60px -30px rgba(0, 0, 0, 0.8);
+  }
+
+  .glass-strong {
+    background: color-mix(in oklab, var(--surface) 88%, transparent);
+    backdrop-filter: blur(24px) saturate(150%);
+    border: 1px solid var(--border);
+    box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.85);
+  }
+
+  .glow-indigo {
+    box-shadow: var(--glow-indigo);
+  }
+
+  .glow-cyan {
+    box-shadow: var(--glow-cyan);
+  }
+
+  .glow-red {
+    box-shadow: var(--glow-red);
+  }
+
+  .grid-lines {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(100deg, var(--neon-cyan), var(--neon-indigo) 55%, var(--neon-purple));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  @keyframes naf-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.82);
+    }
+  }
+
+  .pulse-dot {
+    animation: naf-pulse 1.8s ease-in-out infinite;
+  }
+}
