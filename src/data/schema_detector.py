@@ -215,15 +215,18 @@ def detect_column_mappings(columns: List[str]) -> Tuple[Dict[str, str], List[str
                     matched_raw = raw
                     break
 
-        # 3. Substring match for robust prefix/suffix
+        # 3. Word-boundary match for robust prefix/suffix
         if not matched_raw:
             for raw, norm in normalized_raw.items():
                 if raw in mapped:
                     continue
                 for alias in norm_aliases:
-                    if len(alias) >= 5 and (alias in norm or norm in alias):
-                        matched_raw = raw
-                        break
+                    if len(alias) >= 5:
+                        # Use word boundaries to prevent partial word matches
+                        pattern = r'\b' + re.escape(alias) + r'\b'
+                        if re.search(pattern, norm) or re.search(pattern, raw):
+                            matched_raw = raw
+                            break
                 if matched_raw:
                     break
 

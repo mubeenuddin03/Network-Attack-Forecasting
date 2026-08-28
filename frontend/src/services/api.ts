@@ -11,6 +11,7 @@ import type { DashboardPrediction, DashboardHealth, UploadResponse } from '@/typ
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 export const MAX_CSV_SIZE_BYTES = 300 * 1024 * 1024;
 const REQUEST_TIMEOUT = 10000;
+const UPLOAD_TIMEOUT = 600000; // 10 minutes for CSV upload processing
 const HEALTH_CHECK_INTERVAL = 30000;
 const PREDICTION_POLL_INTERVAL = 15000;
 
@@ -125,6 +126,7 @@ class ApiClient {
     return new Promise<UploadResponse>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${this.baseUrl}/upload`);
+      xhr.timeout = UPLOAD_TIMEOUT;
 
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && onProgress) {
@@ -153,6 +155,7 @@ class ApiClient {
 
       xhr.onerror = () => reject(new ApiError(0, 'Network error during upload'));
       xhr.onabort = () => reject(new ApiError(0, 'Upload cancelled'));
+      xhr.ontimeout = () => reject(new ApiError(408, 'Upload timed out after 10 minutes'));
 
       const form = new FormData();
       form.append('file', file);

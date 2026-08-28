@@ -26,7 +26,7 @@ MODEL_PATH = MODEL_DIR / "model.joblib"
 SCALER_PATH = MODEL_DIR / "scaler.joblib"
 METRICS_PATH = MODEL_DIR / "metrics.json"
 
-MAX_UPLOAD_BYTES = 300 * 1024 * 1024  # 300 MB
+MAX_UPLOAD_BYTES = 300 * 1024 * 1024  # 300 MB upload limit
 
 # Columns required by the existing CIC-IDS2017 cleaning / windowing pipeline.
 REQUIRED_COLUMNS = [
@@ -45,6 +45,7 @@ _scaler = None
 _feature_cols = None
 _model_loaded = False
 _model_load_error = None
+_saved_threshold = 0.5  # Default fallback; replaced from metrics.json when available
 
 
 class WindowFeatures(BaseModel):
@@ -123,24 +124,33 @@ class RootResponse(BaseModel):
 
 
 def load_model_artifacts():
-    """Load model, scaler, and feature columns from disk."""
-    global _model, _scaler, _feature_cols, _model_loaded, _model_load_error
-    
+    """Load model, scaler, feature columns, and threshold from disk."""
+    global _model, _scaler, _feature_cols, _model_loaded, _model_load_error, _saved_threshold
+
     try:
         if not MODEL_PATH.exists() or not SCALER_PATH.exists() or not FEATURE_COLS_PATH.exists():
             raise FileNotFoundError(f"Model artifacts not found in {MODEL_DIR}")
-        
+
         _model = joblib.load(MODEL_PATH)
         _scaler = joblib.load(SCALER_PATH)
-        
+
         with open(FEATURE_COLS_PATH) as f:
             _feature_cols = json.load(f)
-        
+
+        # Load the saved threshold from metrics.json
+        if METRICS_PATH.exists():
+            with open(METRICS_PATH) as f:
+                metrics = json.load(f)
+                _saved_threshold = metrics.get("threshold", 0.5)
+                print(f"   Loaded saved threshold: {_saved_threshold:.4f}")
+        else:
+            _saved_threshold = 0.5
+
         _model_loaded = True
         _model_load_error = None
         print(f"Loaded real model from {MODEL_DIR}")
         print(f"   Features: {len(_feature_cols)}")
-        
+
     except Exception as e:
         _model_load_error = str(e)
         _model_loaded = False
@@ -244,7 +254,7 @@ async def root():
         endpoints={
             "health": "GET /api/health or /health - Check API and model status",
             "predict": "POST /api/predict or /predict - Predict attack probability",
-            "upload": "POST /api/upload or /upload - Multipart CSV upload & World Model rollout",
+            "upload": "POST /api/upload or /upload - Multipart CSV upload (max 300 MB) & World Model rollout",
             "benchmarks": "GET /api/benchmarks or /benchmarks - Empirical comparative metrics",
             "rollout": "POST /api/rollout or /rollout - Autoregressive K-step state simulation",
             "docs": "GET /docs - Interactive Swagger API documentation"
@@ -432,26 +442,47 @@ def process_upload(tmp_csv_path: str, original_filename: str, file_size: int) ->
     if not _model_loaded:
         load_model_artifacts()
 
-    last = windows_df.iloc[-1]
-    features_dict = {col: _safe_float(last.get(col, 0.0)) for col in STATE_FEATURES if col in last}
+    threshold = _saved_threshold
 
-    # 2. Execute Real Model Inference
+    # 2. Execute Real Model Inference across ALL windows (vectorized)
     if _model_loaded and _model is not None and _scaler is not None and _feature_cols is not None:
-        X = pd.DataFrame([last])[_feature_cols]
-        X = X.replace([np.inf, -np.inf], np.nan)
-        X = X.fillna(0.0)
-        X_scaled = _scaler.transform(X)
-        proba = float(_model.predict_proba(X_scaled)[:, 1][0])
-        pred = int(proba >= 0.5)
+        X_all = windows_df[_feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        X_scaled = _scaler.transform(X_all)
+        probas = _model.predict_proba(X_scaled)[:, 1].astype(float)
+        preds = (probas >= threshold).astype(int)
         mode = "REAL_MODEL"
     else:
-        syn_rate = float(last.get('syn_count', 0)) / max(float(last.get('total_flows', 1)), 1.0)
-        port_div = (float(last.get('unique_source_ports', 0)) + float(last.get('unique_dest_ports', 0))) / max(float(last.get('total_flows', 1)), 1.0)
-        flow_intensity = float(last.get('total_flows', 0)) / 1000.0
-        score = min(1.0, max(0.0, (syn_rate * 2.0) + (port_div * 1.5) + (flow_intensity * 0.5)))
-        proba = float(score)
-        pred = int(proba >= 0.5)
+        probas = []
+        for _, row in windows_df.iterrows():
+            syn_rate = float(row.get('syn_count', 0)) / max(float(row.get('total_flows', 1)), 1.0)
+            port_div = (float(row.get('unique_source_ports', 0)) + float(row.get('unique_dest_ports', 0))) / max(float(row.get('total_flows', 1)), 1.0)
+            flow_intensity = float(row.get('total_flows', 0)) / 1000.0
+            probas.append(min(1.0, max(0.0, (syn_rate * 2.0) + (port_div * 1.5) + (flow_intensity * 0.5))))
+        probas = np.array(probas, dtype=float)
+        preds = (probas >= threshold).astype(int)
         mode = "DEMO"
+
+    # Per-window temporal results (genuine model output for the Risk Timeline)
+    windows = []
+    for i, (_, row) in enumerate(windows_df.iterrows()):
+        windows.append({
+            "window_start": pd.Timestamp(row['window_start']).isoformat(),
+            "window_end": pd.Timestamp(row['window_end']).isoformat(),
+            "attack_probability": float(probas[i]),
+            "prediction": int(preds[i]),
+            "status": "ATTACK_LIKELY" if int(preds[i]) == 1 else "NORMAL",
+        })
+
+    # Headline = peak risk over the capture (a real model probability, not a
+    # hardcoded/fabricated value). The World Model rollout is generated from
+    # the highest-risk observed window's state vector.
+    best_idx = int(np.argmax(probas))
+    best = windows_df.iloc[best_idx]
+    proba = float(probas[best_idx])
+    pred = int(preds[best_idx])
+    status = "ATTACK_LIKELY" if pred == 1 else "NORMAL"
+
+    features_dict = {col: _safe_float(best.get(col, 0.0)) for col in STATE_FEATURES if col in best}
 
     # 3. Execute Real World Model K-Step Autoregressive Rollout
     wm = get_world_model()
@@ -476,14 +507,15 @@ def process_upload(tmp_csv_path: str, original_filename: str, file_size: int) ->
         "prediction": {
             "attack_probability": proba,
             "prediction": pred,
-            "status": "ATTACK_LIKELY" if pred == 1 else "NORMAL",
+            "status": status,
             "mode": mode,
-            "threshold_used": 0.5,
-            "window_start": pd.Timestamp(last['window_start']).isoformat(),
-            "window_end": pd.Timestamp(last['window_end']).isoformat(),
+            "threshold_used": threshold,
+            "window_start": pd.Timestamp(best['window_start']).isoformat(),
+            "window_end": pd.Timestamp(best['window_end']).isoformat(),
             "features": features_dict,
             "horizons": horizons,
             "rollout": horizons,
+            "windows": windows,
         },
     }
 

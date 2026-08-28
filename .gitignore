@@ -61,3 +61,10 @@ frontend/tsconfig.tsbuildinfo
 frontend/.vite/
 frontend/coverage/
 frontend/.eslintcache
+
+# Local team distribution only - never push
+members_tasks/
+
+# Stray test / scratch CSVs
+syn_ratio_extreme_attack.csv
+*.scratch.csv

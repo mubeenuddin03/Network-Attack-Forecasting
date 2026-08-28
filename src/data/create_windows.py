@@ -115,8 +115,11 @@ def create_future_target(features: pd.DataFrame) -> pd.DataFrame:
     features['future_attack_ratio'] = features['window_attack_ratio'].shift(-1).fillna(0)
     features['future_dominant_label'] = features['window_dominant_label'].shift(-1).fillna('BENIGN')
     
-    # The last window has no future - mark for removal
-    features['has_future'] = features['future_attack'].notna()
+    # The last window has no future window after it - mark for removal.
+    # NOTE: future_attack was already .fillna(0) above, so it is never NaN.
+    # We therefore identify the last window by position (the chronologically
+    # final 5-minute window has no horizon to predict).
+    features['has_future'] = features.index < (len(features) - 1)
     
     attack_windows = features['future_attack'].sum()
     total_windows = len(features) - 1  # exclude last

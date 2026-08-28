@@ -341,19 +341,19 @@ export function processCsvText(
     avg_subflow_bwd_pkts: subflowBwdSum / N || 6,
   };
 
-  // Accurate prediction calculation & Attack probability
-  let attack_probability = 0.0;
-  if (attackLabelCount > 0) {
-    const attackRatio = attackLabelCount / N;
-    // Map ratio cleanly to probability: e.g. 98% attack flows -> 0.98 probability
-    attack_probability = Math.min(0.99, Math.max(0.70, attackRatio));
-  } else {
-    const syn_rate = synCount / Math.max(N, 1);
-    const port_diversity = (features.unique_source_ports + features.unique_dest_ports) / Math.max(N, 1);
-    const flow_intensity = Math.min(1.0, N / 10000.0);
-    const score = (syn_rate * 0.4) + (port_diversity * 0.4) + (flow_intensity * 0.2);
-    attack_probability = Math.min(0.99, Math.max(0.02, score));
-  }
+// Accurate prediction calculation & Attack probability
+    let attack_probability = 0.0;
+    if (attackLabelCount > 0) {
+      const attackRatio = attackLabelCount / N;
+      // Direct label-ratio heuristic (no artificial floor)
+      attack_probability = Math.min(0.99, Math.max(0.0, attackRatio));
+    } else {
+      const syn_rate = synCount / Math.max(N, 1);
+      const port_diversity = (features.unique_source_ports + features.unique_dest_ports) / Math.max(N, 1);
+      const flow_intensity = Math.min(1.0, N / 10000.0);
+      const score = (syn_rate * 0.4) + (port_diversity * 0.4) + (flow_intensity * 0.2);
+      attack_probability = Math.min(0.99, Math.max(0.02, score));
+    }
 
   const pred = attack_probability >= 0.5 ? 1 : 0;
   const isAttack = pred === 1;

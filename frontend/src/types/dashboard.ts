@@ -39,6 +39,13 @@ export interface UploadPrediction {
     predictedFeatures?: Record<string, number>;
   }>;
   rollout?: Array<any>;
+  windows?: Array<{
+    window_start: string;
+    window_end: string;
+    attack_probability: number;
+    prediction: 0 | 1;
+    status: 'ATTACK_LIKELY' | 'NORMAL';
+  }>;
 }
 
 export interface UploadResponse {

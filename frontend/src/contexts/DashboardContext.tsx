@@ -4,7 +4,6 @@ import { apiClient } from '@/services/api';
 import type { WindowFeatures } from '@/types/api';
 import type { DashboardHealth, DashboardPrediction, NetworkTelemetry, RiskTimelineData, RiskTimelinePoint, ModelPerformanceData, DefenderFocus, DiagnosticsData, ActivityEvent, DatasetInfo, UploadPrediction } from '@/types/dashboard';
 import { getDevicePerformanceTier, prefersReducedMotion } from '@/utils/helpers';
-import { processCsvClientSide } from '@/utils/csvClient';
 import { STANDBY_SCENARIO, SIMULATION_SCENARIOS, type AttackScenario } from '@/utils/simulationPresets';
 
 interface DashboardState {
@@ -230,6 +229,46 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
   uploadCsv: async (file: File) => {
     set({ datasetError: null, uploadStatus: 'uploading', uploadProgress: 0, datasetFile: { name: file.name, size: file.size } });
 
+    const buildRiskTimeline = (prediction: UploadPrediction): RiskTimelineData => {
+      const wins = prediction.windows || [];
+      const threshold = prediction.threshold_used || 0.5;
+      const points: RiskTimelinePoint[] = [];
+      
+      // Observed points from real backend windows
+      if (wins.length > 0) {
+        wins.forEach((w) => {
+          const prob = w.attack_probability > 1 ? w.attack_probability / 100 : w.attack_probability;
+          points.push({ timestamp: w.window_start, risk_score: Math.max(0, Math.min(1, prob)), is_forecast: false });
+        });
+      }
+      
+      // Current state point
+      const prob = prediction.attack_probability > 1 ? prediction.attack_probability / 100 : prediction.attack_probability;
+      points.push({ timestamp: prediction.window_start, risk_score: Math.max(0, Math.min(1, prob)), is_forecast: false });
+      
+      // Forecast points from horizons
+      (prediction.horizons || []).forEach((h, idx) => {
+        const hProb = h.probability > 1 ? h.probability / 100 : h.probability;
+        const stepMinutes = h.horizonMinutes || idx * 5;
+        const ts = new Date(new Date(prediction.window_end).getTime() + stepMinutes * 60000).toISOString();
+        points.push({ 
+          timestamp: ts, 
+          risk_score: Math.max(0, Math.min(1, hProb)), 
+          is_forecast: true, 
+          upper_bound: h.upperBound !== undefined ? (h.upperBound > 1 ? h.upperBound / 100 : h.upperBound) : Math.min(1, hProb + 0.05),
+          lower_bound: h.lowerBound !== undefined ? (h.lowerBound > 1 ? h.lowerBound / 100 : h.lowerBound) : Math.max(0, hProb - 0.05),
+        });
+      });
+
+      return {
+        points,
+        current_index: wins.length,
+        threshold,
+        window_size_minutes: 5,
+        forecast_horizon_minutes: 25,
+      };
+    };
+
     const applyResult = (dataset: DatasetInfo, prediction: UploadPrediction, mode: 'REAL_MODEL' | 'DEMO', note?: string) => {
       const dashboardPrediction: DashboardPrediction = {
         attack_probability: prediction.attack_probability,
@@ -242,7 +281,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
         latency_ms: 0,
       };
       const telemetry = computeDerivedTelemetry(prediction.features);
-      const riskTimeline = generateRiskTimeline(dashboardPrediction, []);
+      const riskTimeline = buildRiskTimeline(prediction);
       const defenderFocus = computeDefenderFocus(dashboardPrediction, telemetry);
       const uploadedScenario = buildUploadedScenario(dataset, prediction, riskTimeline);
 
@@ -279,23 +318,10 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       });
       applyResult(result.dataset, result.prediction, result.prediction.mode);
     } catch (error) {
-      // Backend unreachable or rejected — fall back to a local client-side analysis.
-      try {
-        const fallback = await processCsvClientSide(file);
-        applyResult(fallback.dataset, fallback.prediction, 'DEMO', 'offline demo');
-        useDashboardStore.getState().addToast({
-          type: 'info',
-          title: 'Offline Demo Analysis',
-          message: 'Backend unavailable — analyzed the CSV locally with the demo model.',
-          duration: 6000,
-        });
-        return;
-      } catch (clientError) {
-        const message = error instanceof Error ? error.message : 'Upload failed';
-        set({ datasetError: message, uploadStatus: 'error', uploadProgress: 0 });
-        useDashboardStore.getState().addToast({ type: 'error', title: 'Upload Failed', message, persistent: true });
-        console.error('CSV upload failed:', error);
-      }
+      const message = error instanceof Error ? error.message : 'Upload failed';
+      set({ datasetError: message, uploadStatus: 'error', uploadProgress: 0 });
+      useDashboardStore.getState().addToast({ type: 'error', title: 'Upload Failed', message, persistent: true });
+      console.error('CSV upload failed:', error);
     }
   },
   clearDataset: () => set({
@@ -387,63 +413,6 @@ function computeDerivedTelemetry(features: WindowFeatures): NetworkTelemetry {
     tcp_udp_ratio: features.udp_flow_count > 0 ? features.tcp_flow_count / features.udp_flow_count : features.tcp_flow_count,
     avg_flow_size_bytes: features.total_flows > 0 ? features.total_bytes / features.total_flows : 0,
     avg_flow_size_packets: features.total_flows > 0 ? features.total_packets / features.total_flows : 0,
-  };
-}
-
-function generateRiskTimeline(prediction: DashboardPrediction, _history: DashboardPrediction[] = []): RiskTimelineData {
-  const now = Date.now();
-  const rawProb = prediction.attack_probability;
-  // Normalize to 0.0 - 1.0 unit scale for timeline chart
-  const prob = rawProb > 1.0 ? rawProb / 100 : Math.max(0.0, rawProb);
-  const threshold = prediction.threshold_used > 1.0 ? prediction.threshold_used / 100 : (prediction.threshold_used || 0.5);
-  const isAttack = prob >= threshold;
-  const points: RiskTimelinePoint[] = [];
-
-  // Generate 12 historical points showing realistic build-up / baseline
-  for (let i = -12; i < 0; i++) {
-    const timeOffsetMs = i * 5 * 60 * 1000;
-    const ts = new Date(now + timeOffsetMs).toISOString();
-    let score: number;
-    if (isAttack) {
-      // Ramp up: start low, climb towards current probability
-      if (i < -6) {
-        score = Math.max(0.05, prob * 0.15 + (i + 12) * 0.03);
-      } else {
-        score = Math.min(0.99, prob * 0.5 + (i + 6) * (prob * 0.1));
-      }
-    } else {
-      score = Math.max(0.0, Math.min(0.08, prob + (i % 3 === 0 ? 0.01 : 0)));
-    }
-    const finalScore = Math.max(0.0, Math.min(0.99, score));
-    points.push({ timestamp: ts, risk_score: finalScore, is_forecast: false });
-  }
-
-  // Current observation point
-  points.push({ timestamp: new Date(now).toISOString(), risk_score: prob, is_forecast: false });
-
-  // Generate 5 forward-simulation forecast points
-  for (let k = 1; k <= 5; k++) {
-    const timeOffsetMs = k * 5 * 60 * 1000;
-    const ts = new Date(now + timeOffsetMs).toISOString();
-    const fScore = isAttack
-      ? Math.min(0.99, prob + k * 0.02)
-      : Math.max(0.0, Math.min(0.08, prob));
-    const band = isAttack ? 0.05 : 0.02;
-    points.push({
-      timestamp: ts,
-      risk_score: fScore,
-      is_forecast: true,
-      upper_bound: Math.min(1.0, fScore + band),
-      lower_bound: Math.max(0.0, fScore - band),
-    });
-  }
-
-  return {
-    points,
-    current_index: 12,
-    threshold,
-    window_size_minutes: 5,
-    forecast_horizon_minutes: 25,
   };
 }
 

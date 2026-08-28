@@ -1,8 +1,6 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { UploadCloud, FileText, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { cn } from '@/utils/helpers';
-import { apiClient } from '@/services/api';
-import type { UploadResponse } from '@/types/dashboard';
 import { useDashboardStore } from '@/contexts/DashboardContext';
 
 const MAX_BYTES = 300 * 1024 * 1024;
@@ -15,34 +13,40 @@ function formatSize(bytes: number) {
 
 export function CsvUpload() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const setCurrentFeatures = useDashboardStore(state => state.setCurrentFeatures);
+  const uploadCsvAction = useDashboardStore(state => state.uploadCsv);
+  const uploadProgress = useDashboardStore(state => state.uploadProgress);
+  const uploadStatus = useDashboardStore(state => state.uploadStatus);
+  const dataset = useDashboardStore(state => state.dataset);
+  const datasetError = useDashboardStore(state => state.datasetError);
+  const modelMode = useDashboardStore(state => state.modelMode);
+  const prediction = useDashboardStore(state => state.prediction);
   const [dragging, setDragging] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<UploadResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  // Reset local error when a new upload starts
+  useEffect(() => {
+    if (uploadStatus === 'uploading' || uploadStatus === 'processing') {
+      setLocalError(null);
+    }
+  }, [uploadStatus]);
 
   const upload = async (file?: File) => {
     if (!file) return;
-    setError(null);
-    setResult(null);
-    setProgress(0);
-    if (!file.name.toLowerCase().endsWith('.csv')) return setError('Only CSV files are supported.');
-    if (file.size > MAX_BYTES) return setError('File is larger than the 300 MB limit.');
-
-    try {
-      setProcessing(true);
-      const uploaded = await apiClient.uploadCsv(file, setProgress);
-      setResult(uploaded);
-      if (uploaded?.prediction?.features) {
-        setCurrentFeatures(uploaded.prediction.features);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'CSV upload failed.');
-    } finally {
-      setProcessing(false);
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setLocalError('Only CSV files are supported.');
+      return;
     }
+    if (file.size > MAX_BYTES) {
+      setLocalError(`File is larger than the ${(MAX_BYTES / (1024 * 1024)).toFixed(0)} MB limit.`);
+      return;
+    }
+    await uploadCsvAction(file);
   };
+
+  const processing = uploadStatus === 'uploading' || uploadStatus === 'processing';
+  const progress = uploadProgress;
+  const error = localError || datasetError;
+  const result = uploadStatus === 'success' && dataset ? { dataset, prediction, modelMode } : null;
 
   return (
     <section className="space-y-6">
@@ -68,7 +72,7 @@ export function CsvUpload() {
           <p className="text-body text-text-muted mt-2">or click to browse from your computer</p>
           <div className="flex flex-wrap justify-center gap-2 mt-5 text-caption">
             <span className="px-3 py-1.5 rounded-full bg-surface-800 border border-border-subtle text-text-secondary">CSV only</span>
-            <span className="px-3 py-1.5 rounded-full bg-surface-800 border border-border-subtle text-text-secondary">Maximum 300 MB</span>
+            <span className="px-3 py-1.5 rounded-full bg-surface-800 border border-border-subtle text-text-secondary">Maximum {(MAX_BYTES / (1024 * 1024)).toFixed(0)} MB</span>
             <span className="px-3 py-1.5 rounded-full bg-surface-800 border border-border-subtle text-text-secondary">5-minute windows</span>
           </div>
         </div>
@@ -84,7 +88,7 @@ export function CsvUpload() {
 
       {error && (
         <div className="flex items-start gap-3 p-4 rounded-xl border border-critical-500/30 bg-critical-500/10 text-critical-300">
-          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" /><p className="flex-1 text-body-sm">{error}</p><button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
+          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" /><p className="flex-1 text-body-sm">{error}</p><button onClick={() => setLocalError(null)}><X className="w-4 h-4" /></button>
         </div>
       )}
 
@@ -95,7 +99,7 @@ export function CsvUpload() {
             <Stat label="File size" value={formatSize(result.dataset.file_size_bytes)} />
             <Stat label="Rows" value={result.dataset.row_count.toLocaleString()} />
             <Stat label="5-min windows" value={result.dataset.window_count.toLocaleString()} />
-            <Stat label="Latest window" value="Loaded" />
+            <Stat label="Prediction" value={result.prediction?.status ?? 'Unknown'} />
           </div>
           <p className="text-caption text-secure-400 mt-4">Latest window is now being used by the dashboard prediction.</p>
         </div>
