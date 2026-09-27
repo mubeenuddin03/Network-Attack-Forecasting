@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight,
   ShieldCheck,
-  Target
+  Target,
+  FlaskConical
 } from 'lucide-react';
 import { cn } from '@/utils/helpers';
 import { useSound } from '@/contexts/SoundContext';
@@ -25,11 +26,11 @@ const MITRE_KILL_CHAIN = [
     telemetry: 'Inbound session burst, payload size anomalies'
   },
   {
-    stage: 'Execution & Discovery',
-    tacticId: 'TA0007',
-    technique: 'T1046: Network Service Discovery',
-    desc: 'Enumerating internal host services, accounts and shares.',
-    telemetry: 'Internal sweep, atypical DNS query rate'
+    stage: 'Command & Control',
+    tacticId: 'TA0011',
+    technique: 'T1071: Application Layer Protocol',
+    desc: 'Establishing covert channels for attacker communication.',
+    telemetry: 'Beaconing cadence, low packet size, regular IAT, multi-destination callbacks'
   },
   {
     stage: 'Lateral Movement',
@@ -62,6 +63,7 @@ export function MitreKillChainTracker({ scenario, className }: MitreKillChainTra
   }, [scenario.mitreStageIndex]);
 
   const isAttack = scenario.status === 'ATTACK_LIKELY';
+  const isSimulation = scenario.isSimulation ?? false;
   const currentStageInfo = MITRE_KILL_CHAIN[selectedStage] || MITRE_KILL_CHAIN[0]!;
 
   return (
@@ -88,6 +90,12 @@ export function MitreKillChainTracker({ scenario, className }: MitreKillChainTra
           )}>
             {scenario.mitreStage}
           </span>
+          {isSimulation && (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+              <FlaskConical className="w-3 h-3" />
+              {scenario.simulationLabel || 'SIMULATION'}
+            </span>
+          )}
         </div>
       </div>
 

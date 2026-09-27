@@ -117,7 +117,8 @@ class ApiClient {
 
   async uploadCsv(
     file: File,
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number) => void,
+    endpoint: string = '/upload'
   ): Promise<UploadResponse> {
     if (file.size > MAX_CSV_SIZE_BYTES) {
       throw new ApiError(413, `File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is 300 MB.`);
@@ -125,7 +126,7 @@ class ApiClient {
 
     return new Promise<UploadResponse>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/upload`);
+      xhr.open('POST', `${this.baseUrl}${endpoint}`);
       xhr.timeout = UPLOAD_TIMEOUT;
 
       xhr.upload.onprogress = (event) => {

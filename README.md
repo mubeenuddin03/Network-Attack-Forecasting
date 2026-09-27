@@ -30,62 +30,97 @@ Streamlit dashboard + FastAPI backend
 
 ## Quick Start
 
-### 1. Install Dependencies
+### Prerequisites
+
+| Tool | Required | Notes |
+|------|----------|-------|
+| Python 3.10+ | ✅ Yes | `python --version` |
+| Node.js 18+ / npm | ✅ Yes | `node --version` (for Vite frontend) |
+| Git | Optional | For cloning |
+
+---
+
+### Step 1 — Install Python dependencies
 
 ```bash
+# Create & activate virtual environment
 python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
+.venv\Scripts\activate      # Windows
+# source .venv/bin/activate  # Linux/macOS
 
 pip install -r requirements.txt
 ```
 
-### 2. Prepare Data
+### Step 2 — Install frontend dependencies (one-time)
 
-Place CIC-IDS2017 CSV files in `data/raw/`:
-```
-data/raw/
-├── Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv  (included)
-└── ... (other CIC-IDS2017 files optional)
-```
-
-### 3. Run Pipeline (Step by Step)
-
-**Step 1: Clean Data**
 ```bash
+cd frontend
+npm install
+cd ..
+```
+
+### Step 3 — Prepare data & train model
+
+```bash
+# Clean raw CSV data
 python -m src.data.clean_data
-```
-Output: `data/processed/cleaned_data.parquet`
 
-**Step 2: Create 5-Minute Windows**
-```bash
+# Create 5-minute windows
 python -m src.data.create_windows
-```
-Output: `data/processed/windowed_data.parquet`
 
-**Step 3: Train Baseline Model**
-```bash
+# Train the model (baseline + world model)
 python -m src.models.train
 ```
-Output: `models/baseline/` (model.joblib, scaler.joblib, metrics.json)
 
-**Step 4: Launch Dashboard (Streamlit)**
-```bash
-streamlit run app/app.py
-```
-Open http://localhost:8501
+---
 
-**Step 5: Launch API Backend (FastAPI)**
-```bash
-python app.py
+### ⚡ One-Click Launch (Windows)
+
+After setup is done, just **double-click `start.bat`** — it will:
+1. Start FastAPI backend on `http://localhost:8000`
+2. Start Streamlit analytics on `http://localhost:8501`
+3. Start Vite React frontend on `http://localhost:5173`
+4. Automatically open `http://localhost:5173` in your browser after 5 s
+
+Or run from a terminal:
+```powershell
+# PowerShell
+.\start_dev.ps1
+
+# Python (cross-platform)
+python start.py
+
+# Skip auto-browser open
+python start.py --no-open
 ```
-Or with uvicorn:
+
+---
+
+### Running services manually
+
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+# Terminal 1 — FastAPI backend
+uvicorn app:app --host 127.0.0.1 --port 8000 --reload
+# → http://localhost:8000
+# → http://localhost:8000/docs  (Swagger UI)
+
+# Terminal 2 — Streamlit dashboard
+streamlit run app/app.py --server.port 8501
+# → http://localhost:8501
+
+# Terminal 3 — Vite React frontend
+cd frontend && npm run dev
+# → http://localhost:5173
 ```
-Open http://localhost:8000/docs for interactive API documentation.
+
+### Service URLs at a glance
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| 🖥️ Frontend (React) | http://localhost:5173 | Main interactive dashboard |
+| ⚙️ FastAPI Backend | http://localhost:8000 | REST API |
+| 📖 API Docs (Swagger) | http://localhost:8000/docs | Interactive API explorer |
+| 📊 Streamlit Analytics | http://localhost:8501 | ML metrics & charts |
 
 ## Project Structure
 
@@ -542,8 +577,8 @@ python -m src.models.train
 streamlit run app/app.py     # Dashboard
 python app.py                # API backend
 
-# World-model (temporal) training  -> saves models/temporal/
-python -m src.models.temporal
+# World-model (temporal) training  -> saves models/world_model/
+python -m src.models.train
 
 # Tests
 python tests/test_temporal.py
@@ -553,6 +588,29 @@ python test_validation.py
 ```
 
 All paths are relative. No hardcoded absolute paths. Random seeds fixed for reproducibility.
+
+## Model Artifacts & Loading
+
+| Endpoint | Model Directory | Artifacts Required |
+|----------|-----------------|-------------------|
+| `/predict` | `models/baseline/` | `model.joblib`, `scaler.joblib`, `feature_cols.json`, `metrics.json` |
+| `/rollout`, `/upload`, `/upload_pcap` | `models/world_model/` | `state_transition.joblib`, `state_classifier.joblib`, `scaler.joblib`, `feature_cols.json`, `metrics.json` |
+
+**To retrain the baseline model:**
+```bash
+python -m src.models.train
+```
+
+**To retrain the world model (state transition dynamics):**
+```bash
+python -m src.models.train
+```
+The world model is trained automatically as part of `train.py` (see `train_world_model_from_windows` function).
+
+On API startup, a warning is logged if world model artifacts are missing:
+```
+WARNING: World model artifacts not found — run `python src/models/train.py` first.
+```
 
 ## Security / Safety Notes
 

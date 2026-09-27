@@ -2,7 +2,8 @@ import {
   Clock,
   Target,
   Sparkles,
-  Layers
+  Layers,
+  FlaskConical
 } from 'lucide-react';
 import { cn } from '@/utils/helpers';
 import { usePrediction, useSelectedScenario } from '@/contexts/DashboardContext';
@@ -10,6 +11,7 @@ import { usePrediction, useSelectedScenario } from '@/contexts/DashboardContext'
 export function AttackForecastCard() {
   const prediction = usePrediction();
   const selectedScenario = useSelectedScenario();
+  const isSimulation = selectedScenario?.isSimulation ?? false;
 
   const probability = selectedScenario ? selectedScenario.attackProbability : (prediction?.attack_probability ?? 0);
   const status = selectedScenario ? selectedScenario.status : (prediction?.status ?? 'NORMAL');
@@ -83,7 +85,7 @@ export function AttackForecastCard() {
             </div>
           </div>
 
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex flex-col items-center gap-2">
             <span className={cn(
               'px-3 py-1 rounded-full text-caption font-semibold uppercase tracking-wider',
               isAttackLikely
@@ -92,6 +94,12 @@ export function AttackForecastCard() {
             )}>
               {isAttackLikely ? 'BREACH PROBABLE (ELEVATED)' : 'NOMINAL BASELINE'}
             </span>
+            {isSimulation && (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                <FlaskConical className="w-3 h-3" />
+                {selectedScenario?.simulationLabel || 'SIMULATION'}
+              </span>
+            )}
           </div>
         </div>
 

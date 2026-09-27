@@ -68,3 +68,4 @@ members_tasks/
 # Stray test / scratch CSVs
 syn_ratio_extreme_attack.csv
 *.scratch.csv
+DATA CSV FILES/

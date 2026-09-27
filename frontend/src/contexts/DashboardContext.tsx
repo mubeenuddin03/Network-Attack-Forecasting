@@ -106,25 +106,7 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
       timestamp: new Date().toISOString(),
     }
   ],
-  modelPerformance: {
-    algorithm: 'Temporal World Model (State Dynamics)',
-    feature_count: 35,
-    window_size_minutes: 5,
-    forecast_horizon_minutes: 20,
-    test: {
-      precision: 0.956,
-      recall: 0.928,
-      f1: 0.942,
-      pr_auc: 0.965,
-      roc_auc: 0.978,
-      fpr: 0.012,
-      confusion_matrix: [[494, 6], [36, 464]],
-      tp: 464,
-      fp: 6,
-      tn: 494,
-      fn: 36
-    }
-  },
+  modelPerformance: null,
   defenderFocus: {
     state: 'baseline',
     summary: 'Telemetry nominal: Standby for ingress traffic',
@@ -313,9 +295,13 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
     };
 
     try {
-      const result = await apiClient.uploadCsv(file, (pct) => {
-        set({ uploadProgress: pct, uploadStatus: pct >= 100 ? 'processing' : 'uploading' });
-      });
+      const result = await apiClient.uploadCsv(
+        file,
+        (pct) => {
+          set({ uploadProgress: pct, uploadStatus: pct >= 100 ? 'processing' : 'uploading' });
+        },
+        /\.(pcap|pcapng)$/i.test(file.name) ? '/upload_pcap' : '/upload'
+      );
       applyResult(result.dataset, result.prediction, result.prediction.mode);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Upload failed';
@@ -335,6 +321,38 @@ export const useDashboardStore = create<DashboardState>()((set) => ({
     riskTimeline: null,
     defenderFocus: null,
   }),
+  fetchModelPerformance: async () => {
+    try {
+      const health = await apiClient.getHealth();
+      if (health.model_info?.test_metrics) {
+        const tm = health.model_info.test_metrics;
+        const perfData = {
+          algorithm: health.model_info.algorithm || 'Temporal World Model (State Dynamics)',
+          feature_count: health.model_info.features || 35,
+          window_size_minutes: health.model_info.window_size_minutes || 5,
+          forecast_horizon_minutes: health.model_info.forecast_horizon_minutes || 20,
+          test: {
+            precision: tm.precision,
+            recall: tm.recall,
+            f1: tm.f1,
+            pr_auc: tm.pr_auc,
+            roc_auc: tm.roc_auc,
+            fpr: tm.fpr,
+            confusion_matrix: tm.confusion_matrix,
+            tn: tm.tn,
+            fp: tm.fp,
+            fn: tm.fn,
+            tp: tm.tp,
+          },
+          evaluation_notes: 'Based on current training dataset size.',
+        };
+        set({ modelPerformance: perfData });
+      }
+    } catch (error) {
+      console.warn('Failed to fetch model performance:', error);
+      set({ modelPerformance: null });
+    }
+  },
 }));
 
 export function useDashboardStoreSelector<T>(selector: (state: DashboardState) => T): T {
@@ -470,6 +488,28 @@ function computeDefenderFocus(prediction: DashboardPrediction, telemetry: Networ
   };
 }
 
+function humanizeFeature(feature: string): string {
+  const map: Record<string, string> = {
+    syn_count: 'SYN Flag Count',
+    unique_source_ports: 'Unique Source Ports',
+    unique_dest_ports: 'Unique Dest Ports',
+    unique_source_ips: 'Unique Source IPs',
+    unique_dest_ips: 'Unique Dest IPs',
+    total_flows: 'Total Flows',
+    total_packets: 'Total Packets',
+    total_bytes: 'Total Bytes',
+    tcp_flow_count: 'TCP Flow Count',
+    udp_flow_count: 'UDP Flow Count',
+    rst_count: 'RST Flag Count',
+    urg_count: 'URG Flag Count',
+    avg_packet_size: 'Average Packet Size',
+    avg_flow_duration: 'Flow Duration',
+  };
+  if (map[feature]) return map[feature];
+  const words = feature.split('_').filter(Boolean);
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 function buildUploadedScenario(
   dataset: DatasetInfo,
   prediction: UploadPrediction,
@@ -595,6 +635,13 @@ function buildUploadedScenario(
         },
       ];
 
+  const attribHorizon =
+    prediction.horizons && prediction.horizons.length > 0
+      ? [...prediction.horizons].sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0))[0]
+      : undefined;
+
+  const topFeatures: Array<{ feature: string; value: number }> = attribHorizon?.top_features ?? [];
+
   const attentionAttribution: Array<{
     feature: string;
     label: string;
@@ -602,48 +649,21 @@ function buildUploadedScenario(
     impact: 'critical' | 'high' | 'medium' | 'low';
     baselineVal: string;
     observedVal: string;
-  }> = [
-    {
-      feature: 'syn_count',
-      label: 'SYN Flag Density',
-      weight: Math.min(1.0, Math.max(0.1, synRate * 1.5)),
-      impact: synRate > 1.5 ? 'critical' : synRate > 0.5 ? 'high' : 'low',
-      baselineVal: '< 0.05 SYN/flow',
-      observedVal: `${synRate.toFixed(2)} SYN/flow`,
-    },
-    {
-      feature: 'unique_ports',
-      label: 'Port Diversity',
-      weight: Math.min(1.0, Math.max(0.15, portEntropy)),
-      impact: portEntropy > 0.4 ? 'critical' : portEntropy > 0.2 ? 'high' : 'medium',
-      baselineVal: '0.05 - 0.15',
-      observedVal: portEntropy.toFixed(2),
-    },
-    {
-      feature: 'total_flows',
-      label: 'Flow Arrival Rate',
-      weight: Math.min(1.0, Math.max(0.1, feats.total_flows / 8000)),
-      impact: feats.total_flows > 5000 ? 'high' : 'medium',
-      baselineVal: '100 - 500 flows/5min',
-      observedVal: `${feats.total_flows.toLocaleString()} flows/5min`,
-    },
-    {
-      feature: 'avg_packet_size',
-      label: 'Average Packet Size',
-      weight: Math.min(1.0, Math.max(0.1, feats.avg_packet_size / 1500)),
-      impact: 'medium',
-      baselineVal: '400 - 800 B',
-      observedVal: `${Math.round(feats.avg_packet_size)} B`,
-    },
-    {
-      feature: 'flow_duration',
-      label: 'Flow Duration Variance',
-      weight: Math.min(1.0, Math.max(0.1, feats.avg_flow_duration / 10000000)),
-      impact: 'low',
-      baselineVal: '10k - 50k µs',
-      observedVal: `${Math.round(feats.avg_flow_duration / 1000)} ms`,
-    },
-  ];
+  }> = topFeatures.length > 0
+    ? topFeatures.map((tf) => {
+        const absVal = Math.abs(tf.value);
+        const impact: 'critical' | 'high' | 'medium' | 'low' =
+          absVal > 1.0 ? 'critical' : absVal > 0.5 ? 'high' : absVal > 0.2 ? 'medium' : 'low';
+        return {
+          feature: tf.feature,
+          label: humanizeFeature(tf.feature),
+          weight: Math.min(1.0, Math.max(0.05, absVal)),
+          impact,
+          baselineVal: '—',
+          observedVal: tf.value.toFixed(4),
+        };
+      })
+    : [];
 
   const defenderRecommendations = isAttack
     ? [
@@ -706,6 +726,8 @@ function buildUploadedScenario(
       : `Ingested dataset ${dataset.filename} (${dataset.row_count.toLocaleString()} flows, ${dataset.window_count} window(s)): Network behavior operating normally within baseline tolerances (${(prob * 100).toFixed(1)}% risk).`,
     attackProbability: prob,
     status: prediction.status,
+    isSimulation: false,
+    simulationLabel: 'LIVE MODEL OUTPUT',
     mitreStageIndex: isAttack ? (synRate > 1.5 ? 0 : prob > 0.85 ? 4 : 2) : 0,
     mitreStage,
     mitreTechnique: {
@@ -734,9 +756,9 @@ function buildModelPerformance(health: DashboardHealth): ModelPerformanceData | 
     feature_count: health.model_info.features || 35,
     window_size_minutes: health.model_info.window_size_minutes || 5,
     forecast_horizon_minutes: health.model_info.forecast_horizon_minutes || 5,
-    evaluation_notes: test.tp === 0 && test.fn > 0
+    evaluation_notes: (test.tp === 0 && test.fn > 0
       ? 'WARNING: Zero true positives on test set. Model may not generalize. Treat predictions with caution.'
-      : undefined,
+      : '') + (test.tp === 0 && test.fn > 0 ? ' ' : '') + 'Based on current training dataset size.',
     threshold_sweep: health.model_info.test_metrics ? undefined : undefined,
     feature_importance: undefined,
   };

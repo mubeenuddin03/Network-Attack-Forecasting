@@ -17,7 +17,7 @@ import joblib
 from fastapi import FastAPI, HTTPException, status, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
-from typing import List, Literal
+from typing import List, Literal, Dict
 
 
 MODEL_DIR = Path("models/baseline")
@@ -217,6 +217,15 @@ def predict_demo_mode(features: WindowFeatures, threshold: float) -> tuple:
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     load_model_artifacts()
+    
+    # Check for World Model artifacts
+    wm_transition = Path("models/world_model/state_transition.joblib")
+    wm_classifier = Path("models/world_model/state_classifier.joblib")
+    if not wm_transition.exists() or not wm_classifier.exists():
+        print("WARNING: World model artifacts not found — run `python src/models/train.py` first.")
+    else:
+        print("World Model artifacts found: state_transition.joblib, state_classifier.joblib")
+    
     yield
     # Cleanup if needed
 
@@ -491,6 +500,12 @@ def process_upload(tmp_csv_path: str, original_filename: str, file_size: int) ->
     else:
         horizons = []
 
+    # Feature attribution: ensure every horizon exposes a top_features array
+    # (populated by the world model's exact SHAP computation). Default to an
+    # empty array so the field is always present in the /upload response.
+    for h in horizons:
+        h.setdefault("top_features", [])
+
     return {
         "dataset": {
             "filename": original_filename,
@@ -518,6 +533,140 @@ def process_upload(tmp_csv_path: str, original_filename: str, file_size: int) ->
             "windows": windows,
         },
     }
+
+
+def process_pcap_upload(tmp_pcap_path: str, original_filename: str, file_size: int) -> dict:
+    """Run packet-level feature extraction on an uploaded PCAP capture and
+    produce the same response shape as /upload via the World Model K-step rollout.
+
+    Packet-level stats are merged into the window feature dict (zeros are filled
+    where no match). Raises ValueError (=> HTTP 400) for user-facing problems and
+    RuntimeError (=> HTTP 500) for extraction failures (e.g. missing scapy).
+    """
+    from src.data.packet_features import extract_packet_features, PACKET_FEATURES
+    from src.models.world_model import get_world_model, STATE_FEATURES
+
+    # 1. Extract packet-level stats (global capture statistics).
+    packet_stats = extract_packet_features(tmp_pcap_path)
+
+    # 2. Merge packet-level stats into the window feature dict. Start from the
+    #    35 flow state features (zeroed when not present) so the rollout state
+    #    vector always has the required canonical shape, then overlay any
+    #    packet-level features returned by extraction.
+    merged_features: Dict[str, float] = {col: 0.0 for col in STATE_FEATURES}
+    for col in PACKET_FEATURES:
+        merged_features[col] = float(packet_stats.get(col, 0.0))
+    for col, val in packet_stats.items():
+        merged_features[col] = float(val)
+
+    # 3. Run the World Model K-step autoregressive rollout (same as /upload).
+    wm = get_world_model()
+    if wm is not None and wm.is_fitted:
+        horizons = wm.rollout(merged_features, k_steps=4, window_minutes=5)
+        mode = "REAL_MODEL"
+    else:
+        horizons = []
+        mode = "DEMO"
+
+    for h in horizons:
+        h.setdefault("top_features", [])
+
+    # Headline = peak risk over the rollout trajectory.
+    threshold = _saved_threshold
+    if horizons:
+        peak = max(horizons, key=lambda h: h.get("probability", 0.0))
+        proba = float(peak.get("probability", 0.0))
+    else:
+        proba = 0.0
+
+    pred = int(proba >= threshold)
+    status = "ATTACK_LIKELY" if pred == 1 else "NORMAL"
+
+    return {
+        "dataset": {
+            "filename": original_filename,
+            "file_size_bytes": file_size,
+            "row_count": int(packet_stats.get("pkt_count", 0)),
+            "window_count": len(horizons),
+            "time_range_start": None,
+            "time_range_end": None,
+            "schema_info": {
+                "mapped_columns": len(merged_features),
+                "detected_canonical": list(merged_features.keys()),
+            }
+        },
+        "prediction": {
+            "attack_probability": proba,
+            "prediction": pred,
+            "status": status,
+            "mode": mode,
+            "threshold_used": threshold,
+            "window_start": None,
+            "window_end": None,
+            "features": merged_features,
+            "horizons": horizons,
+            "rollout": horizons,
+            "windows": [],
+        },
+    }
+
+
+@api_router.post("/upload_pcap", response_model=None)
+@app.post("/upload_pcap", response_model=None)
+async def upload_pcap(file: UploadFile = File(...)):
+    """Multipart PCAP / PCAPNG upload (max 300 MB) -> packet-level feature
+    extraction -> World Model K-step rollout. Returns the same shape as /upload."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided.")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in (".pcap", ".pcapng"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .pcap or .pcapng files are supported.",
+        )
+
+    tmp_path = os.path.join(
+        tempfile.gettempdir(),
+        f"naf_pcap_{os.getpid()}_{int(time.time() * 1000)}{ext}",
+    )
+
+    # Stream to disk while enforcing the size limit (no full in-memory load).
+    total = 0
+    try:
+        with open(tmp_path, 'wb') as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File exceeds the 300 MB limit (received {total // (1024 * 1024)} MB).",
+                    )
+                out.write(chunk)
+    except HTTPException:
+        _cleanup_tmp(tmp_path)
+        raise
+    except Exception as e:
+        _cleanup_tmp(tmp_path)
+        raise HTTPException(status_code=400, detail=f"Could not read uploaded file: {e}")
+
+    try:
+        result = process_pcap_upload(tmp_path, file.filename, total)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process PCAP: {e}")
+    finally:
+        _cleanup_tmp(tmp_path)
+
+    return result
 
 
 @api_router.post("/upload", response_model=None)

@@ -107,32 +107,51 @@ def create_sequences_from_windows(windowed_path: str, output_path: str):
 
 
 def get_mitre_attack_stage(row):
-    """Map network behavior to MITRE ATT&CK stage."""
-    # Heuristic mapping based on observable behavior
+    """Map network behavior to MITRE ATT&CK stage.
+    
+    Kill chain order: Recon -> Initial Access -> Command & Control -> Lateral Movement -> Exfiltration
+    """
+    total_flows = row.get('total_flows', 0)
     syn_rate = row.get('syn_rate', 0)
-    tcp_ratio = row.get('tcp_ratio', 0)
     port_diversity = row.get('avg_port_diversity', 0)
+    unique_ips = row.get('avg_unique_ips', 0)
+    volatility = row.get('volatility', 0)
+    traffic_intensity = row.get('traffic_intensity', 0)
     attack_activity = row.get('attack_activity', 0)
+    tcp_ratio = row.get('tcp_ratio', 0)
+    
+    # Flow-level IAT features for beaconing detection
+    avg_flow_iat_mean = row.get('avg_flow_iat_mean', 0)
+    avg_fwd_iat_mean = row.get('avg_fwd_iat_mean', 0)
+    avg_bwd_iat_mean = row.get('avg_bwd_iat_mean', 0)
+    bytes_fwd = row.get('avg_fwd_bytes', 0)
+    unique_dst_ips = row.get('unique_dest_ips', 0)
+    total_bytes = row.get('total_bytes', 0)
 
-    # Reconnaissance: High SYN rate, port scanning patterns
-    if syn_rate > 0.05 and port_diversity > 3 and tcp_ratio > 0.6:
+    # Reconnaissance: High port scanning activity (SYN flood, many unique ports)
+    if syn_rate > 1.0 and port_diversity > 10:
         return "RECONNAISSANCE"
 
-    # Initial Access: Attack activity with network flows
-    elif attack_activity > 0 and row.get('total_flows', 0) > 500:
+    # Initial Access: High volume + external connections + attack signals
+    elif total_flows > 500 and unique_ips > 5 and attack_activity > 0:
         return "INITIAL_ACCESS"
 
-    # Command and Control: Sustained port diversity
-    elif port_diversity >= 3 and tcp_ratio > 0.4:
+    # Command & Control: Beaconing indicators
+    # - Low bytes_fwd (small packets) + consistent IAT (regular cadence)
+    # - High unique dst IP from single src (beaconing to multiple C2 servers)
+    # - Low IAT variance + regular packet cadence (low volatility)
+    elif (bytes_fwd < 500 and (avg_flow_iat_mean > 0 or avg_fwd_iat_mean > 0)) and \
+         (unique_dst_ips > 3 or unique_ips > 3) and \
+         (volatility < 500):  # low variance = regular cadence
         return "COMMAND_AND_CONTROL"
 
-    # Exfiltration: High byte volume
-    elif row.get('total_bytes', 0) > 100000:
-        return "EXFILTRATION"
-
-    # Lateral Movement: High flow count with multiple destinations
-    elif row.get('total_flows', 0) > 1000 and row.get('avg_unique_ips', 0) > 2:
+    # Lateral Movement: Many internal destinations
+    elif total_flows > 1000 and unique_ips > 2:
         return "LATERAL_MOVEMENT"
+
+    # Exfiltration: High outbound bytes, asymmetric ratios
+    elif bytes_fwd > 10000 and traffic_intensity > 100:
+        return "EXFILTRATION"
 
     # Unknown/Insufficient Evidence
     return "UNKNOWN"

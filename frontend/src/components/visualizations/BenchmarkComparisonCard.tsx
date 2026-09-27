@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Trophy, BarChart2 } from 'lucide-react';
+import { Trophy, BarChart2, Info } from 'lucide-react';
 import { cn } from '@/utils/helpers';
 import { useSound } from '@/contexts/SoundContext';
+import { useModelPerformance } from '@/contexts/DashboardContext';
 
 const BENCHMARK_METRICS = [
   {
@@ -70,6 +71,7 @@ const BENCHMARK_METRICS = [
 export function BenchmarkComparisonCard({ className }: { className?: string }) {
   const { play } = useSound();
   const [activeMetric, setActiveMetric] = useState(0);
+  const modelPerformance = useModelPerformance();
 
   return (
     <div className={cn('glass-panel rounded-2xl p-5 border border-border-default/60 space-y-5 font-sans', className)}>
@@ -92,6 +94,16 @@ export function BenchmarkComparisonCard({ className }: { className?: string }) {
             CIC-IDS2017 Dataset (5-Min Temporal Windows)
           </span>
         </div>
+      </div>
+
+      {/* Evaluation note from live model metrics */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-900/60 border border-border-subtle/60 text-caption">
+        <Info className="w-3.5 h-3.5 text-electric-400 flex-shrink-0" />
+        <span className="text-text-muted">
+          {modelPerformance
+            ? modelPerformance.evaluation_notes || 'Based on current training dataset size.'
+            : 'Based on current training dataset size. Loading live metrics from /health...'}
+        </span>
       </div>
 
       {/* Side by Side Key Winner Showcase */}

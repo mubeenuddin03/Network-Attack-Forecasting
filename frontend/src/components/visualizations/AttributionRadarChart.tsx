@@ -64,11 +64,11 @@ export function AttributionRadarChart({ scenario, height = 320, className }: Att
           <div className="flex items-center gap-2">
             <BrainCircuit className="w-4 h-4 text-electric-400" />
             <h3 className="text-body font-semibold text-text-primary">
-              Attention &amp; Feature Attribution (Explainability)
+              Feature Attribution (Top Drivers)
             </h3>
           </div>
           <p className="text-caption text-text-muted mt-0.5">
-            Temporal attention weights &amp; SHAP contributions identifying drivers of the state transition
+            Top contributing network features driving this prediction
           </p>
         </div>
 
@@ -127,7 +127,7 @@ export function AttributionRadarChart({ scenario, height = 320, className }: Att
                 tick={{ fill: '#94a3b8', fontSize: 9, fontFamily: 'Inter, sans-serif' }}
               />
               <Radar
-                name="Attention Weight"
+                name="Contribution"
                 dataKey="weight"
                 stroke="#a855f7"
                 strokeWidth={2}
@@ -144,7 +144,7 @@ export function AttributionRadarChart({ scenario, height = 320, className }: Att
                     <div className="bg-surface-900/95 border border-border-default rounded-xl p-3 shadow-2xl backdrop-blur-xl space-y-1 font-sans">
                       <p className="text-caption font-bold text-text-primary">{item.feature}</p>
                       <p className="text-caption text-violet-400">
-                        Attention Weight: <span className="font-bold text-white">{item.weight}%</span>
+                        Contribution: <span className="font-bold text-white">{item.weight}%</span>
                       </p>
                       <p className="text-[11px] text-text-muted">
                         Observed: <span className="text-amber-300 font-semibold">{item.observed}</span> (Baseline: {item.baseline})

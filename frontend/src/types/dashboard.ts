@@ -35,6 +35,7 @@ export interface UploadPrediction {
     lowerBound: number;
     upperBound: number;
     projectedStage: string;
+    top_features?: Array<{ feature: string; value: number }>;
     stateVector: { synRate: number; portEntropy: number; flowIntensity: number; packetTimingVar: number };
     predictedFeatures?: Record<string, number>;
   }>;

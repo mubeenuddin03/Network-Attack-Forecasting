@@ -32,8 +32,10 @@ export function CsvUpload() {
 
   const upload = async (file?: File) => {
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      setLocalError('Only CSV files are supported.');
+    const isPcap = /\.(pcap|pcapng)$/i.test(file.name);
+    const isCsv = /\.csv$/i.test(file.name);
+    if (!isCsv && !isPcap) {
+      setLocalError('Only CSV, PCAP, and PCAPNG files are supported.');
       return;
     }
     if (file.size > MAX_BYTES) {
@@ -52,8 +54,8 @@ export function CsvUpload() {
     <section className="space-y-6">
       <div>
         <p className="text-caption text-electric-400 font-medium uppercase tracking-wider">Dataset Input</p>
-        <h1 className="text-display-sm font-display font-bold text-text-primary mt-1">Upload network traffic CSV</h1>
-        <p className="text-body text-text-secondary mt-2 max-w-3xl">Drop a CIC-IDS2017 flow CSV here. The backend validates it, builds 5-minute network-state windows, and sends the latest window to the trained model.</p>
+        <h1 className="text-display-sm font-display font-bold text-text-primary mt-1">Upload network traffic capture</h1>
+        <p className="text-body text-text-secondary mt-2 max-w-3xl">Drop a CIC-IDS2017 flow CSV, or a PCAP / PCAPNG packet capture here. The backend validates it, builds network-state windows, and sends the latest state to the trained model.</p>
       </div>
 
       <div
@@ -63,15 +65,15 @@ export function CsvUpload() {
         onClick={() => !processing && inputRef.current?.click()}
         className={cn('glass-panel-strong rounded-2xl p-8 md:p-12 border-2 border-dashed transition-all cursor-pointer', dragging ? 'border-electric-400 bg-electric-500/10' : 'border-border-default hover:border-electric-500/50 hover:bg-surface-800/40', processing && 'cursor-wait opacity-90')}
       >
-        <input ref={inputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => void upload(e.target.files?.[0])} disabled={processing} />
+        <input ref={inputRef} type="file" accept=".csv,.pcap,.pcapng,text/csv,application/vnd.tcpdump.pcap" className="hidden" onChange={e => void upload(e.target.files?.[0])} disabled={processing} />
         <div className="flex flex-col items-center text-center">
           <div className="w-16 h-16 rounded-2xl bg-electric-500/10 border border-electric-500/20 flex items-center justify-center text-electric-400 mb-5">
             <UploadCloud className="w-8 h-8" />
           </div>
-          <h2 className="text-heading-lg font-semibold text-text-primary">{processing ? 'Processing dataset…' : 'Drop your CSV here'}</h2>
+          <h2 className="text-heading-lg font-semibold text-text-primary">{processing ? 'Processing capture…' : 'Drop your capture here'}</h2>
           <p className="text-body text-text-muted mt-2">or click to browse from your computer</p>
           <div className="flex flex-wrap justify-center gap-2 mt-5 text-caption">
-            <span className="px-3 py-1.5 rounded-full bg-surface-800 border border-border-subtle text-text-secondary">CSV only</span>
+            <span className="px-3 py-1.5 rounded-full bg-surface-800 border border-border-subtle text-text-secondary">CSV / PCAP / PCAPNG</span>
             <span className="px-3 py-1.5 rounded-full bg-surface-800 border border-border-subtle text-text-secondary">Maximum {(MAX_BYTES / (1024 * 1024)).toFixed(0)} MB</span>
             <span className="px-3 py-1.5 rounded-full bg-surface-800 border border-border-subtle text-text-secondary">5-minute windows</span>
           </div>
@@ -80,9 +82,9 @@ export function CsvUpload() {
 
       {processing && (
         <div className="glass-panel rounded-xl p-4">
-          <div className="flex items-center justify-between text-caption mb-2"><span className="text-text-secondary">Uploading CSV</span><span className="font-mono text-text-primary">{progress}%</span></div>
+          <div className="flex items-center justify-between text-caption mb-2"><span className="text-text-secondary">Uploading capture</span><span className="font-mono text-text-primary">{progress}%</span></div>
           <div className="h-2 rounded-full bg-surface-800 overflow-hidden"><div className="h-full bg-electric-500 transition-all duration-200" style={{ width: `${progress}%` }} /></div>
-          {progress >= 100 && <p className="text-caption text-text-muted mt-2">Upload complete. Building 5-minute windows…</p>}
+          {progress >= 100 && <p className="text-caption text-text-muted mt-2">Upload complete. Building network-state windows…</p>}
         </div>
       )}
 

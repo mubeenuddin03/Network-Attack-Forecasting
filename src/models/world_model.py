@@ -140,6 +140,45 @@ class TemporalWorldModel:
         S_scaled = self.scaler.transform(state)
         return float(self.risk_classifier.predict_proba(S_scaled)[:, 1][0])
 
+    def _compute_shap_top_features(self, state_scaled: np.ndarray) -> List[Dict[str, Any]]:
+        """Compute the top-5 feature contributions driving the risk prediction.
+
+        Uses shap.LinearExplainer on the fitted risk classifier. The risk
+        classifier is a LogisticRegression model, so LinearExplainer is an
+        exact computation (no sampling / approximation). SHAP values must be
+        computed on the SCALED state representation, matching how the
+        classifier was trained.
+
+        For linear models: SHAP_i = coef_i * (x_i - E[x_i]). We use the
+        scaler's mean as E[x] (the training data mean in scaled space).
+
+        Returns a list of {feature, value} sorted by absolute contribution
+        (highest first). Returns [] when SHAP is not installed or the model is
+        not fitted.
+        """
+        try:
+            import shap
+        except ImportError:
+            return []
+
+        try:
+            # For linear models, use coefficient-based SHAP (exact)
+            # SHAP_i = coef_i * (x_i - mean_i) where mean is training data mean in scaled space
+            # The scaler's mean_ is the training data mean in original space
+            # In scaled space, the mean is 0 (since StandardScaler centers to 0)
+            # So SHAP_i = coef_i * x_i_scaled
+            coef = self.risk_classifier.coef_[0]  # Shape: (n_features,)
+            x_scaled = state_scaled.reshape(-1)
+            shap_vals = coef * x_scaled
+
+            top_idx = np.argsort(np.abs(shap_vals))[::-1][:5].tolist()
+            return [
+                {"feature": self.feature_names[i], "value": float(shap_vals[i])}
+                for i in top_idx
+            ]
+        except Exception:
+            return []
+
     def rollout(self, initial_state: Dict[str, float], k_steps: int = 4, window_minutes: int = 5) -> List[Dict[str, Any]]:
         """
         Autoregressive K-Step Forward Simulation:
@@ -209,17 +248,36 @@ class TemporalWorldModel:
         flow_intensity = float(min(1.0, total_flows / 5000.0))
 
         # ATT&CK Stage classification from model-predicted future state
+        # Kill chain order: Recon -> Initial Access -> Command & Control -> Lateral Movement -> Exfiltration
+        # Extract state features for C2 beaconing detection
+        bytes_fwd = feat_dict.get('avg_fwd_bytes', 0.0)
+        avg_flow_iat_mean = feat_dict.get('avg_flow_iat_mean', 0.0)
+        avg_fwd_iat_mean = feat_dict.get('avg_fwd_iat_mean', 0.0)
+        unique_dst_ips = feat_dict.get('unique_dest_ips', 0.0)
+        # volatility proxy from state vector
+        volatility_proxy = feat_dict.get('volatility', 0.0)
+
         if probability >= 0.5:
             if syn_rate > 1.2:
                 stage = "Reconnaissance (T1595 Active Scanning)"
             elif probability > 0.85:
                 stage = "Impact / Volumetric DoS (T1498)"
+            elif (bytes_fwd < 500 and (avg_flow_iat_mean > 0 or avg_fwd_iat_mean > 0)) and \
+                 (unique_dst_ips > 3) and \
+                 (volatility_proxy < 500):
+                stage = "Command & Control (T1071 Application Layer Protocol)"
             else:
                 stage = "Execution & Discovery (T1046)"
         else:
             stage = "Nominal Baseline State"
 
         step_label = f"S(t + {horizon_mins}m)" if horizon_mins > 0 else "Current State S(t)"
+
+        # Feature attribution (top drivers): exact SHAP values computed on the
+        # scaled state representation, attached per horizon.
+        state_1d = np.asarray(state_vec, dtype=np.float64).reshape(1, -1)
+        state_scaled = self.scaler.transform(state_1d)
+        top_features = self._compute_shap_top_features(state_scaled)
 
         return {
             "stepIndex": step_idx,
@@ -229,6 +287,7 @@ class TemporalWorldModel:
             "lowerBound": float(max(0.0, probability - uncertainty_band)),
             "upperBound": float(min(1.0, probability + uncertainty_band)),
             "projectedStage": stage,
+            "top_features": top_features,
             "stateVector": {
                 "synRate": float(min(1.0, syn_rate)),
                 "portEntropy": float(min(1.0, port_entropy)),

@@ -7,6 +7,8 @@ export interface AttackScenario {
   description: string;
   attackProbability: number;
   status: 'ATTACK_LIKELY' | 'NORMAL';
+  isSimulation: boolean;
+  simulationLabel: string;
   mitreStageIndex: number;
   mitreStage: string;
   mitreTechnique: { id: string; name: string; tactic: string; description: string };
@@ -42,6 +44,11 @@ export interface AttackScenario {
     lower_bound?: number;
   }>;
 }
+
+const SIMULATION_BADGE = {
+  isSimulation: true as const,
+  simulationLabel: 'SIMULATION',
+};
 
 const ZERO_FEATURES: WindowFeatures = {
   total_flows: 0,
@@ -84,6 +91,7 @@ const ZERO_FEATURES: WindowFeatures = {
 export const STANDBY_SCENARIO: AttackScenario = {
   id: 'standby',
   name: 'Standby / Awaiting Ingestion',
+  ...SIMULATION_BADGE,
   category: 'Benign',
   description: 'World Model in standby mode. Select a scenario preset below or upload a network CSV to begin real-time forecasting.',
   attackProbability: 0.0,
@@ -121,6 +129,7 @@ export const SIMULATION_SCENARIOS: AttackScenario[] = [
   {
     id: 'portscan-infiltration',
     name: 'CIC-IDS2018 PortScan & Reconnaissance',
+    ...SIMULATION_BADGE,
     category: 'Reconnaissance',
     description: 'Systematic sequential & randomized TCP SYN port probing across subnet 192.168.10.0/24 preceding initial exploitation.',
     attackProbability: 0.89,
@@ -195,6 +204,7 @@ export const SIMULATION_SCENARIOS: AttackScenario[] = [
   {
     id: 'stealth-lateral',
     name: 'Stealth Low-and-Slow Lateral Movement',
+    ...SIMULATION_BADGE,
     category: 'Lateral Movement',
     description: 'Evasive low-rate authentication probing and SMB/RPC session establishment designed to circumvent static threshold alarms.',
     attackProbability: 0.74,
@@ -268,6 +278,7 @@ export const SIMULATION_SCENARIOS: AttackScenario[] = [
   {
     id: 'synflood-dos',
     name: 'Volumetric SYN-Flood Exhaustion',
+    ...SIMULATION_BADGE,
     category: 'Denial of Service',
     description: 'Massive multi-threaded half-open TCP SYN packet flooding intended to exhaust kernel socket connection state tables.',
     attackProbability: 0.96,
@@ -340,6 +351,7 @@ export const SIMULATION_SCENARIOS: AttackScenario[] = [
   {
     id: 'benign-corporate',
     name: 'Benign Corporate Telemetry Baseline',
+    ...SIMULATION_BADGE,
     category: 'Benign',
     description: 'Legitimate business-hours network activity consisting of encrypted HTTPS, internal DB queries, and routine DNS queries.',
     attackProbability: 0.03,
